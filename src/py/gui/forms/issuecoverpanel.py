@@ -55,6 +55,7 @@ class IssueCoverPanel(Panel):
       self.__nextbutton = None
       self.__prevbutton = None
       self.__hint_textbox = None
+      self.__hint_search_button = None
       self.__ref = None
       # the last SeriesRef passed to set_ref(), if any -- remembered so that
       # set_issue_num_hint() can re-trigger the search against it later.
@@ -83,14 +84,22 @@ class IssueCoverPanel(Panel):
       self.Controls.Add(self.__label)
       self.Controls.Add(self.__nextbutton)
       if self.__editable_hint_b:
-         self.__hint_textbox = self.__build_hint_textbox()
+         self.__hint_textbox, self.__hint_search_button = \
+            self.__build_hint_row()
          self.Controls.Add(self.__hint_textbox)
+         self.Controls.Add(self.__hint_search_button)
       self.set_ref(None)
       self.__do_layout()
 
    # ==========================================================================
-   def __build_hint_textbox(self):
-      ''' builds and returns the editable "issue number hint" textbox '''
+   def __build_hint_row(self):
+      '''
+      Builds and returns the (textbox, button) pair that make up the
+      editable "issue number hint" row: a textbox to type/edit an issue
+      number, and a search button next to it -- pressing Enter in the
+      textbox also works, but the button makes the feature discoverable
+      for anyone who wouldn't think to try Enter.
+      '''
       tbox = TextBox()
       tbox.Visible = self.__config.show_covers_b
       tbox.TextAlign = HorizontalAlignment.Center
@@ -108,7 +117,17 @@ class IssueCoverPanel(Panel):
          commit_hint()
       tbox.KeyDown += key_down
       tbox.Leave += lost_focus
-      return tbox
+
+      button = Button()
+      button.Visible = self.__config.show_covers_b
+      button.Text = i18n.get("IssueCoverPanelHintSearch")
+      button.UseVisualStyleBackColor = True
+      tip.SetToolTip(button, i18n.get("IssueCoverPanelHintTooltip"))
+      def search_clicked(sender, args):
+         commit_hint()
+      button.Click += search_clicked
+
+      return tbox, button
 
    # ==========================================================================
    def __build_coverimage(self):
@@ -201,8 +220,13 @@ class IssueCoverPanel(Panel):
          self.__label.Size = Size(label_w, btn_h)
          if self.__editable_hint_b and self.__hint_textbox is not None:
             hint_y = btn_y + btn_h + padding
+            search_btn_w = min(60, max(36, int(w * 0.28)))
+            hint_tbox_w = max(20, w - padding*3 - search_btn_w)
             self.__hint_textbox.Location = Point(padding, hint_y)
-            self.__hint_textbox.Size = Size(max(20, w - padding*2), hint_h)
+            self.__hint_textbox.Size = Size(hint_tbox_w, hint_h)
+            self.__hint_search_button.Location = \
+               Point(padding*2 + hint_tbox_w, hint_y)
+            self.__hint_search_button.Size = Size(search_btn_w, hint_h)
       except Exception:
          pass
       
@@ -223,6 +247,7 @@ class IssueCoverPanel(Panel):
       self.__nextbutton = None
       self.__label = None
       self.__hint_textbox = None
+      self.__hint_search_button = None
       self.Dispose()
 
    # ==========================================================================

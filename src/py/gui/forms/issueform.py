@@ -318,7 +318,9 @@ class IssueForm(CVForm):
       container = Panel()
       container.Dock = DockStyle.Fill
       filter_panel = Panel()
-      filter_panel.Height = 28
+      # extra height (vs. the 24px the textboxes need) leaves a gap below
+      # them so the filter row doesn't look glued to the table underneath
+      filter_panel.Height = 38
       filter_panel.Dock = DockStyle.Top
       filter_panel.BackColor = table.BackColor
 

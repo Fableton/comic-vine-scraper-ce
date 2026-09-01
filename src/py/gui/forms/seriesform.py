@@ -137,7 +137,9 @@ class SeriesForm(CVForm):
    # ==========================================================================
    def __build_filters_panel(self, table):
       container = Panel(); container.Dock = DockStyle.Fill
-      filter_panel = Panel(); filter_panel.Height = 28; filter_panel.Dock = DockStyle.Top; filter_panel.BackColor = table.BackColor
+      # extra height (vs. the 24px the textboxes need) leaves a gap below
+      # them so the filter row doesn't look glued to the table underneath
+      filter_panel = Panel(); filter_panel.Height = 38; filter_panel.Dock = DockStyle.Top; filter_panel.BackColor = table.BackColor
       # crear textboxes
       self.__filter_series = TextBox(); self.__filter_year = TextBox(); self.__filter_issues = TextBox(); self.__filter_publisher = TextBox()
       self.__filter_series.BorderStyle = self.__filter_year.BorderStyle = self.__filter_issues.BorderStyle = self.__filter_publisher.BorderStyle
