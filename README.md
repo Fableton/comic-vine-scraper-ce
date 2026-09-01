@@ -1,5 +1,42 @@
 **Looking to download and install the Comic Vine Scraper plugin?  [Click here](https://github.com/cbanack/comic-vine-scraper/wiki/) to get started.**
 
+------------------------------------------------------------------------------------
+
+## About This Fork
+
+This is a fork of Cory Banack's [comic-vine-scraper](https://github.com/cbanack/comic-vine-scraper),
+maintained for use with [ComicRackCE](https://github.com/maforget/ComicRackCE). The upstream project
+is in maintenance-only mode (no new features), so this fork adds several usability improvements to the
+series/issue picker dialogs on top of the original v1.0.102 release:
+
+- **Issue picker (IssueForm):**
+  - New **Year** and **Month** columns, sourced from each issue's Comic Vine cover date
+  - A filterable header row (Issue / Title / Year / Month), debounced so typing quickly in a
+    500+-issue series doesn't lag
+  - **"Previous Comic"** button: lets you go back and redo the immediately-previous book if you
+    picked the wrong series/issue for it, including reverting its scraped count and forcing a real
+    (non-cached) rescrape instead of silently reusing the earlier, wrong choice
+  - A resizable window with a responsive, docked layout instead of a fixed size
+- **Series picker (SeriesForm):**
+  - Shift-click multi-column sorting on the series table (click sorts by one column, shift-click
+    adds/toggles a tie-breaker column) on top of the existing filterable Series/Year/Issues/Publisher
+    header row (also now debounced)
+  - An editable "issue number to preview" field under the series cover art -- lets you correct the
+    auto-detected issue number to preview a different cover, and that corrected number is then used
+    (instead of the original guess) when picking the matching issue for the book
+- **Search dialog:** the search box is now a combobox that remembers your last 20 (deduplicated)
+  search terms, most-recent first
+- **Performance:** a series' full issue list is now cached to disk for 24 hours, so re-scraping many
+  books from the same large series doesn't re-fetch it from the Comic Vine API every time
+- **Fix:** Ctrl+Backspace was inserting a stray control character instead of deleting the previous
+  word in the new filter/search text boxes; now deletes the word as expected
+
+This fork keeps the upstream project's source layout (`src/py/...`) so patches can still be diffed
+against/contributed back to the original where it makes sense. See the original project's own
+[Pull Requests](#pull-requests) policy below before proposing changes there.
+
+------------------------------------------------------------------------------------
+
 ## Project Status
 
 I am maintaining the Comic Vine Scraper project, but **I am no longer actively adding new features.**
