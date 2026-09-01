@@ -20,58 +20,84 @@ class IssueRef(object):
    '''
    
    #===========================================================================
-   def __init__(self, issue_num_s, issue_key, title_s, thumb_url_s):
-      ''' 
+   def __init__(self, issue_num_s, issue_key, title_s, thumb_url_s,
+         pub_year_n=-1, pub_month_n=-1):
+      '''
       Initializes a newly created IssueRef, checking the given parameters to
       make sure they are legal, and then storing them as read-only properties.
-         
-      issue_key --> a database specific object (i.e. the 'memento' design 
-         pattern) that can be used by the database at a later date to 
-         unambiguously identify this comic book issue. This cannot be None, 
+
+      issue_key --> a database specific object (i.e. the 'memento' design
+         pattern) that can be used by the database at a later date to
+         unambiguously identify this comic book issue. This cannot be None,
          and it should have a useful __str__ method.  It should also be unique
          for each comic book issue.
-      
-      issue_num_s --> a string describing this comic's issue number (which may 
+
+      issue_num_s --> a string describing this comic's issue number (which may
          not be a number at all, it can be '' or '1A' or 'A', etc. It cannot
          be None.)
-         
+
       title_s --> a string describing the title of this comic book issue.
          if no title is available, pass in "" here.
-         
+
       thumb_url_s --> the (http) url of an appropriate thumbnail image for this
-         comic book issue (usually the cover.)  if no image is available, 
+         comic book issue (usually the cover.)  if no image is available,
          pass in None here.
+
+      pub_year_n --> the (cover date) publication year of this issue, as an
+         int, or -1 if it is not known.
+
+      pub_month_n --> the (cover date) publication month of this issue, as an
+         int between 1 and 12, or -1 if it is not known.
       '''
 
       if not issue_key or len(sstr(issue_key).strip()) == 0 \
             or issue_num_s is None:
          raise Exception()
-      
+
       self.__issue_key = issue_key
       self.__issue_num_s = sstr(issue_num_s).strip()
       self.__title_s = title_s if utils.is_string(title_s) else ""
-      
+
       # make sure thumb_url_s is either valid, or none (but not '').
       self.__thumb_url_s =None if not thumb_url_s else sstr(thumb_url_s).strip()
       if self.__thumb_url_s == '':
-         self.__thumb_url_s = None 
-      
+         self.__thumb_url_s = None
+
+      try:
+         self.__pub_year_n = int(pub_year_n)
+         self.__pub_year_n = self.__pub_year_n if self.__pub_year_n > 0 else -1
+      except:
+         self.__pub_year_n = -1
+
+      try:
+         self.__pub_month_n = int(pub_month_n)
+         self.__pub_month_n = self.__pub_month_n \
+            if 1 <= self.__pub_month_n <= 12 else -1
+      except:
+         self.__pub_month_n = -1
+
       # used only for comparisons
       self._cmpkey_s = sstr(self.issue_key)
-      
-      
+
+
    #===========================================================================
    # the 'number' of this IssueRef's issue, as a string. not None. maybe empty.
    issue_num_s = property( lambda self : self.__issue_num_s )
-   
+
    # the db key (i.e. a memento object) of this IssueRef's issue. not None.
    issue_key = property( lambda self : self.__issue_key )
-   
+
    # the title of this IssueRef's issue. not None, may be empty.
    title_s = property( lambda self : self.__title_s )
-   
+
    # the url of this series's thumbnail, as a string. may be None.
    thumb_url_s = property( lambda self : self.__thumb_url_s )
+
+   # the (cover date) publication year of this issue, an int, or -1 if unknown.
+   pub_year_n = property( lambda self : self.__pub_year_n )
+
+   # the (cover date) publication month (1-12) of this issue, or -1 if unknown.
+   pub_month_n = property( lambda self : self.__pub_month_n )
       
       
    #===========================================================================

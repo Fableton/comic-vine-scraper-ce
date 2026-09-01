@@ -378,13 +378,33 @@ def _query_issue_refs(series_ref, callback_function=lambda x : False):
 
 
 
-# ==========================================================================   
+# ==========================================================================
 def __issue_to_issueref(issue):
    ''' Converts a cvdb "issue" dom element into an IssueRef. '''
    issue_num_s = issue.issue_number
    issue_num_s = issue_num_s.strip() if is_string(issue_num_s) else ''
    title_s = issue.name.strip() if is_string(issue.name) else ''
-   return IssueRef(issue_num_s, issue.id, title_s, __parse_image_url(issue))
+   pub_year_n, pub_month_n = __parse_pub_year_month(issue)
+   return IssueRef(issue_num_s, issue.id, title_s, __parse_image_url(issue),
+      pub_year_n, pub_month_n)
+
+
+# ==========================================================================
+def __parse_pub_year_month(issue):
+   '''
+   Extracts the (year, month) of the given cvdb "issue" dom element's
+   cover_date, as a pair of ints.  Returns (-1, -1) if not available/parsable.
+   '''
+   year_n, month_n = -1, -1
+   if "cover_date" in issue.__dict__ and is_string(issue.cover_date) and \
+         len(issue.cover_date) > 1:
+      try:
+         parts = [int(x) for x in issue.cover_date.split('-')]
+         year_n = parts[0] if len(parts) >= 1 else -1
+         month_n = parts[1] if len(parts) >= 2 else -1
+      except:
+         pass # got an unrecognized date format...? should be "YYYY-MM-DD"
+   return year_n, month_n
 
 
 # =============================================================================

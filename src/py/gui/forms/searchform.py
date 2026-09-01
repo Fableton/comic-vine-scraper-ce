@@ -7,14 +7,17 @@ This module is home to the SearchForm class.
 import clr
 import i18n
 from cvform import CVForm
+from resources import Resources
 import utils
 
 clr.AddReference('System.Windows.Forms')
 from System.Windows.Forms import AutoScaleMode, Button, \
-    DialogResult, Keys, Label, TextBox, ContextMenu, MenuItem
+    DialogResult, Keys, Label, ComboBox, ComboBoxStyle, ContextMenu, \
+    MenuItem, Clipboard, TableLayoutPanel, DockStyle, FormBorderStyle
+import System # for ColumnStyle/RowStyle/Padding
 
 clr.AddReference('System.Drawing')
-from System.Drawing import Point, Size
+from System.Drawing import Size, Font
 
 #==============================================================================
 class SearchForm(CVForm):
@@ -56,10 +59,10 @@ class SearchForm(CVForm):
       # the cancel button for this form
       self.__cancel_button = None
       
-      # the textbox for this form
-      self.__textbox = None
-      
-      
+      # the (editable) search combobox for this form
+      self.__combobox = None
+
+
       CVForm.__init__(self, scraper.comicrack.MainWindow, "searchformLocation")
       scraper.cancel_listeners.append(self.Close)
       self.__build_gui(initial_search_s, failed_search_s)
@@ -75,32 +78,74 @@ class SearchForm(CVForm):
       self.__search_button = self.__build_searchbutton()
       self.__skip_button = self.__build_skipbutton()
       self.__cancel_button = self.__build_cancelbutton()
-      self.__textbox = self.__build_textbox(
-         failed_search_s if failed_search_s else initial_search_s, 
+      self.__combobox = self.__build_combobox(
+         failed_search_s if failed_search_s else initial_search_s,
          self.__search_button, self.__cancel_button)
-      
+
       # configure this form, and add all gui components to it
       self.AutoScaleMode = AutoScaleMode.Font
-      self.ClientSize = Size(435, 200 if self.__fail_label_is_visible else 100)
+      self.ClientSize = Size(450, 280 if self.__fail_label_is_visible else 170)
       self.Text = i18n.get("SeriesSearchFailedTitle") \
          if self.__fail_label_is_visible else i18n.get("SearchFormTitle")
+      self.FormBorderStyle = FormBorderStyle.Sizable # permitir redimensionar
       self.KeyDown += self.__key_was_pressed
       self.KeyUp += self.__key_was_released
-      self.__textbox.KeyDown += self.__key_was_pressed
-      self.__textbox.KeyUp += self.__key_was_released
+      self.__combobox.KeyDown += self.__key_was_pressed
+      self.__combobox.KeyUp += self.__key_was_released
       self.Deactivate += self.__was_deactivated
-      
-      self.Controls.Add(self.__fail_label)
-      self.Controls.Add(self.__label)
-      self.Controls.Add(self.__textbox)
-      self.Controls.Add(self.__search_button)
-      self.Controls.Add(self.__skip_button)
-      self.Controls.Add(self.__cancel_button)
-      
+
+      # responsive layout using a docked TableLayoutPanel, so every
+      # component stretches/repositions itself as the window is resized,
+      # instead of sitting at fixed coordinates.
+      main_layout = TableLayoutPanel()
+      main_layout.ColumnCount = 1
+      main_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      main_layout.RowCount = 5
+      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         100 if self.__fail_label_is_visible else 0))
+      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, 26))
+      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, 36)) # taller: bigger combo font
+      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100)) # spacer, absorbs resize
+      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, 55)) # taller button row
+      main_layout.Dock = DockStyle.Fill
+      main_layout.Padding = System.Windows.Forms.Padding(10)
+
+      # buttons sublayout, so the 3 buttons always evenly divide the
+      # available width instead of looking cramped together
+      buttons_layout = TableLayoutPanel()
+      buttons_layout.ColumnCount = 3
+      buttons_layout.RowCount = 1
+      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 33.33))
+      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 33.33))
+      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 33.34))
+      buttons_layout.Dock = DockStyle.Fill
+      self.__search_button.Dock = DockStyle.Fill
+      self.__skip_button.Dock = DockStyle.Fill
+      self.__cancel_button.Dock = DockStyle.Fill
+      buttons_layout.Controls.Add(self.__search_button, 0, 0)
+      buttons_layout.Controls.Add(self.__skip_button, 1, 0)
+      buttons_layout.Controls.Add(self.__cancel_button, 2, 0)
+
+      main_layout.Controls.Add(self.__fail_label, 0, 0)
+      main_layout.Controls.Add(self.__label, 0, 1)
+      main_layout.Controls.Add(self.__combobox, 0, 2)
+      main_layout.Controls.Add(buttons_layout, 0, 4)
+
+      self.Controls.Add(main_layout)
+
       # define the keyboard focus tab traversal ordering
-      self.__textbox.TabIndex = 0
+      self.__combobox.TabIndex = 0
       self.__search_button.TabIndex = 1
-      self.__skip_button.TabIndex = 2 
+      self.__skip_button.TabIndex = 2
       self.__cancel_button.TabIndex = 3
 
 
@@ -111,12 +156,11 @@ class SearchForm(CVForm):
 
       label = Label()
       label.UseMnemonic = False
-      label.Location = Point(10, 10)
-      label.Size = Size(415, 100)
-      label.Visible = self.__fail_label_is_visible   
+      label.Dock = DockStyle.Fill
+      label.Visible = self.__fail_label_is_visible
       if self.__fail_label_is_visible:
          label.Text = i18n.get("SeriesSearchFailedText").format(failed_search_s)
-         
+
       return label
 
    
@@ -126,8 +170,7 @@ class SearchForm(CVForm):
 
       label = Label()
       label.UseMnemonic = False
-      label.Location = Point(10, 110 if self.__fail_label_is_visible else 10)
-      label.Size = Size(415, 20)
+      label.Dock = DockStyle.Fill
       label.Text = i18n.get("SearchFormText")
       return label
 
@@ -138,8 +181,6 @@ class SearchForm(CVForm):
       
       button = Button()
       button.DialogResult = DialogResult.OK
-      button.Location = Point(125, 170 if self.__fail_label_is_visible else 70)
-      button.Size = Size(100, 23)
       button.Text = i18n.get("SearchFormSearch")
       button.UseVisualStyleBackColor = True
       return button
@@ -151,8 +192,6 @@ class SearchForm(CVForm):
 
       button = Button()
       button.DialogResult = DialogResult.Ignore
-      button.Location = Point(235, 170 if self.__fail_label_is_visible else 70)
-      button.Size = Size(90, 23)
       button.Text = i18n.get("SearchFormSkip")
       button.UseVisualStyleBackColor = True
       return button
@@ -164,24 +203,27 @@ class SearchForm(CVForm):
       
       button = Button()
       button.DialogResult = DialogResult.Cancel
-      button.Location = Point(335, 170 if self.__fail_label_is_visible else 70)
-      button.Size = Size(90, 23)
       button.Text = i18n.get("SearchFormCancel")
       button.UseVisualStyleBackColor = True
       return button
    
    
-   #===========================================================================      
-   def __build_textbox(self, initial_text_s, searchbutton, cancelbutton):
-      ''' 
-      Builds and returns the textbox for this form.
-      initial_text_s -> the starting text for the textbox
-      searchbutton -> the 'search' button from the containing Form  
-      cancelbutton -> the 'cancel' button from the containing Form  
+   #===========================================================================
+   def __build_combobox(self, initial_text_s, searchbutton, cancelbutton):
       '''
-      
-      # make a special subclass of TextBox in order to...
-      class SearchTextBox(TextBox):
+      Builds and returns the (editable) search combobox for this form.
+      Besides letting the user type any freeform text (like the old textbox
+      did), this combobox's dropdown list shows the last 20 unique search
+      terms that were previously used (most recent first); picking one just
+      fills in the text, which can still be edited before pressing Search.
+
+      initial_text_s -> the starting text for the combobox
+      searchbutton -> the 'search' button from the containing Form
+      cancelbutton -> the 'cancel' button from the containing Form
+      '''
+
+      # make a special subclass of ComboBox in order to...
+      class SearchComboBox(ComboBox):
          # ... capture ESCAPE and ENTER keypresses
          def OnKeyPress(self, args):
             if args.KeyChar == chr(13):
@@ -191,26 +233,78 @@ class SearchForm(CVForm):
                cancelbutton.PerformClick()
                args.Handled = True
             else:
-               TextBox.OnKeyPress(self, args)
-               
-         # ... disable the Search button if the textbox is empty
+               ComboBox.OnKeyPress(self, args)
+
+         # ... disable the Search button if the combobox's text is empty
          def OnTextChanged(self, args):
             searchbutton.Enabled = bool(self.Text.strip())
-            
-      tbox = SearchTextBox()
-      tbox.Location = Point(10, 135 if self.__fail_label_is_visible else 35)
-      tbox.Size = Size(415, 1)
+
+      cbox = SearchComboBox()
+      cbox.DropDownStyle = ComboBoxStyle.DropDown # editable text + dropdown
+      cbox.Dock = DockStyle.Fill
+      cbox.Font = Font(cbox.Font.FontFamily, 12.0, cbox.Font.Style)
+      for term_s in self.__load_search_history():
+         cbox.Items.Add(term_s)
       if initial_text_s:
-         tbox.Text = initial_text_s
-      tbox.SelectAll()
-      
+         cbox.Text = initial_text_s
+      cbox.Select(0, len(cbox.Text) if cbox.Text else 0)
+      utils.fix_ctrl_backspace(cbox)
+
+      # ComboBox doesn't have TextBox's Cut()/Copy()/Paste() convenience
+      # methods, so implement the same context menu items by hand.
+      def do_copy():
+         if cbox.SelectionLength > 0:
+            Clipboard.SetText(cbox.SelectedText)
+      def do_cut():
+         if cbox.SelectionLength > 0:
+            Clipboard.SetText(cbox.SelectedText)
+            start_n = cbox.SelectionStart
+            text_s = cbox.Text
+            cbox.Text = text_s[:start_n] + text_s[start_n + cbox.SelectionLength:]
+            cbox.Select(start_n, 0)
+      def do_paste():
+         if Clipboard.ContainsText():
+            paste_s = Clipboard.GetText()
+            start_n = cbox.SelectionStart
+            text_s = cbox.Text
+            cbox.Text = text_s[:start_n] + paste_s + \
+               text_s[start_n + cbox.SelectionLength:]
+            cbox.Select(start_n + len(paste_s), 0)
+
       menu = ContextMenu()
       items = menu.MenuItems
-      items.Add( MenuItem(i18n.get("TextCut"), lambda s, ea : tbox.Cut() ) )
-      items.Add( MenuItem(i18n.get("TextCopy"), lambda s, ea : tbox.Copy() ) )
-      items.Add( MenuItem(i18n.get("TextPaste"), lambda s, ea : tbox.Paste() ) )
-      tbox.ContextMenu = menu
-      return tbox
+      items.Add( MenuItem(i18n.get("TextCut"), lambda s, ea : do_cut() ) )
+      items.Add( MenuItem(i18n.get("TextCopy"), lambda s, ea : do_copy() ) )
+      items.Add( MenuItem(i18n.get("TextPaste"), lambda s, ea : do_paste() ) )
+      cbox.ContextMenu = menu
+      return cbox
+
+
+   #===========================================================================
+   def __load_search_history(self):
+      '''
+      Returns a list of up to the 20 most recently used search terms (as
+      strings), ordered most-recent-first.  Returns [] if there is no
+      history yet, or if it can't be loaded for any reason.
+      '''
+      contents_s = utils.load_string(Resources.SEARCH_HISTORY_FILE)
+      if not contents_s:
+         return []
+      return [line.strip() for line in contents_s.split("\n") if line.strip()]
+
+
+   #===========================================================================
+   def __save_search_history(self, search_terms_s):
+      '''
+      Adds the given (non-empty) search terms to the front of the persisted
+      search history, removing any existing case-insensitive duplicate of
+      it first, and keeping only the 20 most recent entries.
+      '''
+      history_sl = self.__load_search_history()
+      history_sl = [t for t in history_sl if t.lower() != search_terms_s.lower()]
+      history_sl.insert(0, search_terms_s)
+      utils.persist_string(
+         "\n".join(history_sl[:20]), Resources.SEARCH_HISTORY_FILE)
 
 
 
@@ -223,9 +317,12 @@ class SearchForm(CVForm):
       
       dialogAnswer = self.ShowDialog( self.Owner ) # blocks
       if dialogAnswer == DialogResult.OK:
-         search_terms_s = self.__textbox.Text.strip()
-         return SearchFormResult("SEARCH", search_terms_s) if search_terms_s \
-             else SearchFormResult("CANCEL")
+         search_terms_s = self.__combobox.Text.strip()
+         if search_terms_s:
+            self.__save_search_history(search_terms_s)
+            return SearchFormResult("SEARCH", search_terms_s)
+         else:
+            return SearchFormResult("CANCEL")
       elif dialogAnswer == DialogResult.Ignore:
          if self.ModifierKeys == Keys.Control:
             return SearchFormResult("PERMSKIP")

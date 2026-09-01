@@ -99,7 +99,7 @@ def _query_issue_ids_dom(API_KEY, seriesid_s, page_n=1):
    
    # {0} is the series ID, an integer     
    QUERY = 'https://comicvine.gamespot.com/api/issues/?api_key=' + API_KEY + __CLIENTID +\
-      '&format=xml&field_list=name,issue_number,id,image&filter=volume:{0}'
+      '&format=xml&field_list=name,issue_number,id,image,cover_date&filter=volume:{0}'
    PAGE = "" if page_n == 1 \
       else "&page={0}&offset={1}".format(page_n, (page_n-1)*100)
    

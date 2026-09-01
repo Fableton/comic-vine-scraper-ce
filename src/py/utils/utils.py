@@ -332,6 +332,50 @@ def load_string(file):
 
 
 #==============================================================================
+def fix_ctrl_backspace(control):
+   '''
+   Wires up manual "delete the previous word" handling for Ctrl+Backspace
+   on the given TextBox or ComboBox (DropDown style).
+
+   This works around a WinForms quirk where, in a form that previews its
+   own KeyDown events (KeyPreview=True, as all CVForms do) and/or a control
+   that has its own KeyPress override, Ctrl+Backspace can fail to do the
+   normal Windows "delete previous word" edit and instead insert a garbled,
+   literal control character (charcode 0x7F) into the text. Call this once
+   on any TextBox/ComboBox where that's been observed.
+   '''
+   clr.AddReference('System.Windows.Forms')
+   from System.Windows.Forms import Keys
+
+   def key_down(sender, args):
+      if not (args.Control and args.KeyCode == Keys.Back):
+         return
+      text_s = control.Text or ''
+      start_n = control.SelectionStart
+      sel_len_n = control.SelectionLength
+      if sel_len_n <= 0:
+         # no selection: find the start of the "word" right before the
+         # caret, skipping any whitespace between it and the caret first
+         i = start_n
+         while i > 0 and text_s[i-1].isspace():
+            i -= 1
+         while i > 0 and not text_s[i-1].isspace():
+            i -= 1
+         delete_from_n = i
+      else:
+         # a selection is active: ctrl+backspace just deletes it, same as
+         # plain backspace would (matches standard Windows behavior)
+         delete_from_n = start_n
+      control.Text = text_s[:delete_from_n] + text_s[start_n + sel_len_n:]
+      control.SelectionStart = delete_from_n
+      control.SelectionLength = 0
+      args.Handled = True
+      args.SuppressKeyPress = True # prevent the raw char from also being typed
+
+   control.KeyDown += key_down
+
+
+#==============================================================================
 def strip_back_cover(image):
    """
    Checks the given image to see if it has the pixel ratio of 2 comic book pages

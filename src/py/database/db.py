@@ -15,8 +15,20 @@ source, and therefore may be quite slow and occassionally unreliable.
 '''
 
 import re
+import time
+import clr
 import cvdb
 import utils
+from dbmodels import IssueRef
+from resources import Resources
+
+clr.AddReference('System')
+from System.IO import Directory
+
+# how long (in seconds) a disk-cached list of a series's issues stays valid
+# before we go back to the network to refresh it (new issues get added to
+# a series over time, so we don't want to cache this forever). 1 day.
+__ISSUE_DISK_CACHE_TTL_SECONDS = 60 * 60 * 24
 
 
 # a limited-size cache for storing the results of SeriesRef searches
@@ -181,20 +193,99 @@ def query_issue_refs(series_ref, callback_function=lambda x : False):
    '''
    
    # use caching here for when this method is called serveral times in a row
-   # for the same series ref.  this happens all the time if the user is 
+   # for the same series ref.  this happens all the time if the user is
    # scraping a bunch of comics from the same series all at once.
    global __issue_refs_cache
    if __issue_refs_cache == None:
       raise Exception(__name__ + " module isn't initialized!")
-   
+
    issue_refs = set()
    if series_ref in __issue_refs_cache:
-      issue_refs = set(__issue_refs_cache[series_ref]) 
-   else: 
+      issue_refs = set(__issue_refs_cache[series_ref])
+   else:
+      # the in-memory cache above only survives for the current scrape run
+      # (and only remembers the single most-recently-queried series). for a
+      # big series (100s of issues) that gets scraped repeatedly across
+      # separate runs -- e.g. one comic at a time -- also check a small
+      # on-disk cache before going out to the network.
+      issue_refs = __load_issue_refs_disk_cache(series_ref)
+      if issue_refs is None:
+         issue_refs = cvdb._query_issue_refs(series_ref, callback_function)
+         __save_issue_refs_disk_cache(series_ref, issue_refs)
       __issue_refs_cache = {} # only keep one element in cache (else too big!)
-      issue_refs = cvdb._query_issue_refs(series_ref, callback_function)
-      __issue_refs_cache[series_ref] = set(issue_refs) 
+      __issue_refs_cache[series_ref] = set(issue_refs)
    return issue_refs
+
+
+# =============================================================================
+def __issue_disk_cache_file_s(series_ref):
+   ''' Returns the on-disk cache file path for the given SeriesRef's issues.'''
+   safe_key_s = re.sub(r'[^A-Za-z0-9_-]', '_', utils.sstr(series_ref.series_key))
+   return Resources.LOCAL_CACHE_DIRECTORY + r'\issues-' + safe_key_s + '.dat'
+
+
+# =============================================================================
+def __load_issue_refs_disk_cache(series_ref):
+   '''
+   Returns a set of IssueRefs previously cached to disk for the given
+   SeriesRef, or None if there is no cache file for it, the cache file is
+   older than __ISSUE_DISK_CACHE_TTL_SECONDS, or it can't be read/parsed.
+   '''
+   try:
+      contents_s = utils.load_string(__issue_disk_cache_file_s(series_ref))
+      if not contents_s:
+         return None
+      lines_sl = contents_s.split("\n")
+      if not lines_sl or not lines_sl[0].strip():
+         return None
+      age_n = time.time() - float(lines_sl[0].strip())
+      if age_n < 0 or age_n > __ISSUE_DISK_CACHE_TTL_SECONDS:
+         return None # missing/corrupt timestamp, or the cache is stale
+      issue_refs = set()
+      for line_s in lines_sl[1:]:
+         if not line_s.strip():
+            continue
+         parts = line_s.split("\t")
+         if len(parts) != 6:
+            continue
+         issue_num_s, issue_key_s, title_s, thumb_url_s, \
+            pub_year_s, pub_month_s = parts
+         issue_refs.add(IssueRef(issue_num_s, issue_key_s, title_s,
+            thumb_url_s if thumb_url_s else None,
+            int(pub_year_s), int(pub_month_s)))
+      return issue_refs
+   except Exception:
+      import log
+      log.debug_exc("problem loading issue-refs disk cache")
+      return None
+
+
+# =============================================================================
+def __save_issue_refs_disk_cache(series_ref, issue_refs):
+   '''
+   Persists the given set of IssueRefs to disk, for later reuse by
+   __load_issue_refs_disk_cache(). Failures are silently ignored -- disk
+   caching is a nice-to-have, not something scraping should ever fail on.
+   '''
+   try:
+      Directory.CreateDirectory(Resources.LOCAL_CACHE_DIRECTORY)
+      def clean_s(value):
+         return re.sub(r'[\t\r\n]', ' ', utils.sstr(value)).strip()
+      lines_sl = [utils.sstr(time.time())]
+      for ref in issue_refs:
+         lines_sl.append("\t".join([
+            clean_s(ref.issue_num_s),
+            clean_s(ref.issue_key),
+            clean_s(ref.title_s),
+            clean_s(ref.thumb_url_s) if ref.thumb_url_s else '',
+            utils.sstr(ref.pub_year_n),
+            utils.sstr(ref.pub_month_n),
+         ]))
+      utils.persist_string(
+         "\n".join(lines_sl), __issue_disk_cache_file_s(series_ref))
+   except Exception:
+      import log
+      log.debug_exc("problem saving issue-refs disk cache")
 
 
 # =============================================================================

@@ -220,26 +220,37 @@ class ScrapeEngine(object):
          # this caches the scraped data we've accumulated as we loop
          scrape_cache = {}
          
-         # 7. start the "Main Processing Loop". 
+         # 7. start the "Main Processing Loop".
          #    notice the list of books can get longer while we're looping,
          #    if we choose to delay processing a book until the end.
          i = 0
          orig_length = len(books)
+         # indices (into 'books') that have already been counted as SCRAPED
+         # in self.__status; tracked so that if the user backs up to redo
+         # the immediately-previous book, we can undo that counting (it'll
+         # get re-counted if/when that book is successfully rescraped).
+         scraped_indices = set()
+         # indices that are about to be redone via the "Previous Comic"
+         # button; forces a real (interactive) rescrape for them even when
+         # 'fast rescrape' is on, since their in-memory tags/notes already
+         # got updated with a (possibly wrong) key tag on their first pass,
+         # which fast-rescrape would otherwise silently reuse unquestioned.
+         force_full_rescrape_indices = set()
          while i < len(books):
             if self.__cancelled_b: break
             book = books[i]
-            
-            # 7a. wait for the scrape delay to pass after scraping each book.  
-            #     don't do this for books that have been delayed or for the 
+
+            # 7a. wait for the scrape delay to pass after scraping each book.
+            #     don't do this for books that have been delayed or for the
             #     first book that the user scrapes.
             delayed_b = i >= orig_length # book was delayed until the end
             if i != 0 and not delayed_b:
                self.__wait_until_ready()
                if self.__cancelled_b: break  # user cancelled while we waited
-               
+
 
             # 7b. notify 'start_scrape_listeners' that we're scraping a new book
-            
+
             log.debug("======> scraping next comic book: '",
                'FILELESS ("' + book.series_s +" #"+ book.issue_num_s+ ''")"
                if book.path_s == "" else Path.GetFileName(book.path_s),"'")
@@ -250,20 +261,25 @@ class ScrapeEngine(object):
             # 7c. ...keep trying to scrape that book until either it is scraped,
             #     the user chooses to skip it, or the user cancels altogether.
             manual_search_b = False
-            fast_rescrape_b = self.config.fast_rescrape_b and not delayed_b
+            fast_rescrape_b = self.config.fast_rescrape_b and not delayed_b \
+               and i not in force_full_rescrape_indices
+            force_full_rescrape_indices.discard(i)
             autoscrape_b = self.config.autochoose_series_b and \
                 not self.config.confirm_issue_b and not delayed_b
             bookstatus = BookStatus("DELAYED") \
                if delayed_b else BookStatus("UNSCRAPED")
-               
+            has_previous_b = i > 0 # is there a previous book to back up to?
+            go_back_b = False
+
             while not self.__cancelled_b:
-               
+
                bookstatus = self.__scrape_book(book, scrape_cache,
-                 manual_search_b, fast_rescrape_b, autoscrape_b, bookstatus)
-               
+                 manual_search_b, fast_rescrape_b, autoscrape_b, bookstatus,
+                 has_previous_b)
+
                if bookstatus.equals("UNSCRAPED"):
-                  # this return code means 'no series could be found using 
-                  # the current (automatic or manual) search terms'.  when  
+                  # this return code means 'no series could be found using
+                  # the current (automatic or manual) search terms'.  when
                   # that happens, force the user to choose the search terms.
                   manual_search_b = True
                   continue
@@ -271,6 +287,7 @@ class ScrapeEngine(object):
                   # book was scraped normally, all is good, update status
                   self.__status[0] += 1
                   self.__status[1] -= 1
+                  scraped_indices.add(i)
                   break
                elif bookstatus.equals("SKIPPED"):
                   # book was skipped, status is already correct for that book
@@ -279,18 +296,42 @@ class ScrapeEngine(object):
                   # put this book into the end of the list, where we can try
                   # rescraping  after we've handled the ones that we can do
                   # automatically.  ignore it if it's already been delayed.
-                  if not delayed_b: 
+                  if not delayed_b:
                      books.append(book)
                   break
-            
+               elif bookstatus.equals("PREVIOUS"):
+                  # user wants to go back and redo the immediately-previous
+                  # book (only offered/possible when has_previous_b is True)
+                  go_back_b = True
+                  break
+
             # keep memory usage from getting out of control!
             GC.Collect()
             GC.WaitForPendingFinalizers()
-            
+
             log.debug()
             log.debug()
-            i = i + 1
-            
+
+            if go_back_b and i > 0:
+               # undo this book's SCRAPED counting from its earlier pass, if
+               # any -- it'll be re-counted if it's rescraped successfully.
+               if (i-1) in scraped_indices:
+                  self.__status[0] -= 1
+                  self.__status[1] += 1
+                  scraped_indices.discard(i-1)
+               # force a fresh series pick for it, instead of reusing
+               # whatever (possibly wrong) series choice is cached for it
+               prev_key = books[i-1].unique_series_s
+               if prev_key in scrape_cache:
+                  del scrape_cache[prev_key]
+               # and force a real (interactive) rescrape, bypassing the
+               # fast-rescrape shortcut that would otherwise silently reuse
+               # the (possibly wrong) key tag already written on its 1st pass
+               force_full_rescrape_indices.add(i-1)
+               i = i - 1
+            else:
+               i = i + 1
+
       finally:
          self.comicrack.MainWindow.Activate() # fixes issue 159
          if comic_form: comic_form.close_threadsafe()
@@ -298,8 +339,9 @@ class ScrapeEngine(object):
 
 
    # ==========================================================================
-   def __scrape_book(self, book, scrape_cache, 
-         manual_search_b, fast_rescrape_b, autoscrape_b, prev_status=None):
+   def __scrape_book(self, book, scrape_cache,
+         manual_search_b, fast_rescrape_b, autoscrape_b, prev_status=None,
+         has_previous_b=False):
       '''
       This method is the heart of the Main Processing Loop. It scrapes a single
       ComicBook object by first figuring out which issue entry in the database 
@@ -476,12 +518,19 @@ class ScrapeEngine(object):
 
       # 3d. now that we have a set of SeriesRefs that match this book, 
       #     show the user the Series dialog so he/she can choose the right one.
-      #     put the chosen series into the series cache.  METHOD EXIT: while 
-      #     viewing the series dialog, the user might skip, request to 
+      #     put the chosen series into the series cache.  METHOD EXIT: while
+      #     viewing the series dialog, the user might skip, request to
       #     re-search, or cancel the entire scrape operation.
+
+      # if the user manually edits the issue-number preview field on the
+      # series dialog's cover panel, it overrides the book's own (possibly
+      # wrong) auto-detected issue number for the rest of this book's scrape.
+      # None unless/until the series dialog is actually shown below.
+      issue_num_override_s = None
+
       while True:
-         force_issue_dialog_b = self.config.confirm_issue_b 
-         if key not in scrape_cache: 
+         force_issue_dialog_b = self.config.confirm_issue_b
+         if key not in scrape_cache:
             if not series_refs or not search_terms_s:
                return BookStatus("UNSCRAPED") # rare but possible, bug 77
             series_form_result =\
@@ -501,10 +550,12 @@ class ScrapeEngine(object):
                  series_form_result.equals("OK"): # user says 'ok'
                scraped_series = ScrapedSeries( series_form_result.get_ref() )
                # user has chosen a series, so ignore config.confirm_issue_b
-               # and only force the issue dialog if she clicked 'show' 
+               # and only force the issue dialog if she clicked 'show'
                force_issue_dialog_b = series_form_result.equals("SHOW")
                scrape_cache[key] = scraped_series
-               
+               issue_num_override_s = \
+                  series_form_result.get_issue_num_override_s()
+
 
          # 4. at this point, the 'correct' series for the book is now in the
          #    series cache.  now we try to pick the matching issue in that 
@@ -545,12 +596,12 @@ class ScrapeEngine(object):
             else: 
                log.debug("   ...identified issue number ", book.issue_num_s )
                
-         else:            
-            # 5b. ...otherwise, try to find the issue interactively         
-            issue_form_result = self.__choose_issue_ref( book, 
-               scraped_series.series_ref, scraped_series.issue_refs, 
-               force_issue_dialog_b)
-            
+         else:
+            # 5b. ...otherwise, try to find the issue interactively
+            issue_form_result = self.__choose_issue_ref( book,
+               scraped_series.series_ref, scraped_series.issue_refs,
+               force_issue_dialog_b, issue_num_override_s, has_previous_b)
+
             if issue_form_result.equals("CANCEL") or self.__cancelled_b:
                self.__cancelled_b = True
                return BookStatus("SKIPPED")
@@ -566,6 +617,9 @@ class ScrapeEngine(object):
             elif issue_form_result.equals("BACK"):
                # ignore user's previous series selection
                del scrape_cache[key]
+            elif issue_form_result.equals("PREVIOUS"):
+               # user wants to go back and redo the immediately-previous book
+               return BookStatus("PREVIOUS")
             else:
                issue_ref = issue_form_result.get_ref() # not None!
          
@@ -660,41 +714,50 @@ class ScrapeEngine(object):
 
 
 
-   # ==========================================================================   
-   def __choose_issue_ref(self, book, series_ref, issue_refs, force_b):
+   # ==========================================================================
+   def __choose_issue_ref(self, book, series_ref, issue_refs, force_b,
+         issue_num_override_s=None, has_previous_b=False):
       '''
-      This method chooses the IssueRef that matches the given book from among 
-      the given set of IssueRefs.  It may do this automatically if it can, or 
-      it may display the IssueForm, a dialog that displays the IssueRefs and 
+      This method chooses the IssueRef that matches the given book from among
+      the given set of IssueRefs.  It may do this automatically if it can, or
+      it may display the IssueForm, a dialog that displays the IssueRefs and
       asks the user to choose one.
-      
+
       'book' -> the book that we are currently scraping
       'series_ref_s' -> the SeriesRef for the given set of issue refs
       'issue_refs' -> a set of IssueRefs; if empty, it MAY be filled with
           the issue refs for the given series ref, if non-empty, this is the
           list of IssueRefs we'll be choosing from.
-      'force_b' -> whether we should force the IssueForm to be shown, or 
+      'force_b' -> whether we should force the IssueForm to be shown, or
                    only show it when we have no choice.
-      
-      This method returns a IssueFormResult object (from the IssueForm). 
+      'issue_num_override_s' -> if given (not None), use this issue number
+          instead of the book's own (auto-detected) issue number -- set when
+          the user manually edited the issue-number preview field on the
+          series dialog's cover panel.
+      'has_previous_b' -> whether there's a previous book that the user could
+          choose to go back and redo (enables the IssueForm's "Previous
+          Comic" button).
+
+      This method returns a IssueFormResult object (from the IssueForm).
       '''
 
       result = None  # the return value; must start out null
-      
+
       series_name_s = series_ref.series_name_s
-      issue_num_s = '' if not book.issue_num_s else book.issue_num_s
+      issue_num_s = issue_num_override_s if issue_num_override_s \
+         else ('' if not book.issue_num_s else book.issue_num_s)
       if issue_refs == None: raise "issue_refs must be a set we can populate"
 
       # 1. are our issue refs empty? if so, and we're not forced to display
       #    the IssueForm, then try the shortcut way to find the right issue ref.
       #    if that fails, get all the issue refs for this series (so we can
-      #    search for the issue the long way.)  
+      #    search for the issue the long way.)
       if len(issue_refs) == 0 and issue_num_s and not force_b:
-         issue_ref = db.query_issue_ref(series_ref, book.issue_num_s)
+         issue_ref = db.query_issue_ref(series_ref, issue_num_s)
          if issue_ref:
             result = IssueFormResult("OK", issue_ref) # found it!
             log.debug("   ...identified issue number ", issue_num_s )
-            
+
       # 2. if we don't have our issue_refs yet, and we're going to be 
       #    displaying the issue dialog, then get the issue_refs
       if len(issue_refs) == 0 and (not result or force_b):
@@ -743,7 +806,8 @@ class ScrapeEngine(object):
                log.debug("   ...could not identify issue number automatically")
             hint = result.get_ref() if result else None
             log.debug("displaying the issue selection dialog...")
-            with IssueForm(self, hint, issue_refs, series_ref) as issue_form:
+            with IssueForm(self, hint, issue_refs, series_ref,
+                  has_previous_b) as issue_form:
                result = issue_form.show_form()
                result = result if result else IssueFormResult("BACK")
             log.debug('   ...user chose to ', result.get_debug_string())
@@ -870,17 +934,18 @@ class BookStatus(object):
       ''' 
       Creates a new BookStatus object with the given ID.
       
-      id -> the status ID.  Must be one of "SCRAPED" (book was successfully 
-            scraped), "SKIPPED" (user chose to skip this book), "UNSCRAPED" 
-            (hasn't been scraped yet) or "DELAYED" (hasn't been scraped, try
-            again later).
-      failed_search_terms_s -> (optional) the series search terms that couldn't 
+      id -> the status ID.  Must be one of "SCRAPED" (book was successfully
+            scraped), "SKIPPED" (user chose to skip this book), "UNSCRAPED"
+            (hasn't been scraped yet), "DELAYED" (hasn't been scraped, try
+            again later), or "PREVIOUS" (user wants to go back and redo the
+            immediately-previous book).
+      failed_search_terms_s -> (optional) the series search terms that couldn't
             be found, if there are any.  This only makes sense in certain cases
-            where the id is "UNSCRAPED". 
-      '''  
-            
+            where the id is "UNSCRAPED".
+      '''
+
       if id != "SCRAPED" and id != "SKIPPED" and \
-            id != "UNSCRAPED" and id != "DELAYED":
+            id != "UNSCRAPED" and id != "DELAYED" and id != "PREVIOUS":
          raise Exception()
       
       self.__id = id
