@@ -8,10 +8,12 @@ import clr
 import i18n
 from resources import Resources
 from cvform import CVForm 
+from System.Windows.Forms import FormBorderStyle, DockStyle
 from configform import ConfigForm
+import System
 
 clr.AddReference('System.Windows.Forms')
-from System.Windows.Forms import AutoScaleMode, Button, DialogResult, Label
+from System.Windows.Forms import AutoScaleMode, Button, DialogResult, Label, TableLayoutPanel
 
 clr.AddReference('System.Drawing')
 from System.Drawing import Point, Size
@@ -55,12 +57,28 @@ class WelcomeForm(CVForm):
       self.CancelButton = cancel
       self.AutoScaleMode = AutoScaleMode.Font
       self.Text = Resources.SCRIPT_FULLNAME
-      self.ClientSize = Size(416, 100)
-   
-      self.Controls.Add(label)
-      self.Controls.Add(ok)
-      self.Controls.Add(cancel)
-      self.Controls.Add(settings)
+      self.ClientSize = Size(500, 200)
+      self.FormBorderStyle = FormBorderStyle.Sizable
+
+          # 2. --- create and configure the TableLayoutPanel
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 2
+      table_layout.ColumnCount = 3
+      table_layout.Dock = DockStyle.Fill
+
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64))
+
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
+      self.Controls.Add(table_layout)
+
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.SetColumnSpan(label, 3)
+      table_layout.Controls.Add(ok,0,1)
+      table_layout.Controls.Add(cancel,1,1)
+      table_layout.Controls.Add(settings,2,1)
       
       # 3. --- define the keyboard focus tab traversal ordering
       ok.TabIndex = 0
@@ -85,6 +103,7 @@ class WelcomeForm(CVForm):
       label.Size = Size(319, 13)
       label.Text = i18n.get("WelcomeFormTextPlural").format(len(books)) \
          if plural else i18n.get("WelcomeFormTextSingle")
+      label.Dock = DockStyle.Fill
       return label
 
    
@@ -98,6 +117,7 @@ class WelcomeForm(CVForm):
       button.Size = Size(145, 23)
       button.Text = i18n.get("WelcomeFormStart")
       button.UseVisualStyleBackColor = True
+      button.Dock = DockStyle.Fill
       return button
    
    
@@ -111,6 +131,7 @@ class WelcomeForm(CVForm):
       button.Size = Size(100, 23)
       button.Text = i18n.get("WelcomeFormSettings")
       button.UseVisualStyleBackColor = True
+      button.Dock = DockStyle.Fill
       return button
 
    
@@ -124,6 +145,7 @@ class WelcomeForm(CVForm):
       button.Size = Size(90, 23)
       button.Text = i18n.get("WelcomeFormCancel")
       button.UseVisualStyleBackColor = True
+      button.Dock = DockStyle.Fill
       return button
 
       

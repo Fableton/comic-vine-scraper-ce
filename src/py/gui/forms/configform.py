@@ -6,6 +6,7 @@ This module contains the ConfigForm class (a popup dialog).
 import clr
 import log
 from cvform import CVForm 
+from System.Windows.Forms import FormBorderStyle, DockStyle
 from configuration import Configuration
 import i18n
 import System
@@ -13,7 +14,8 @@ import System
 clr.AddReference('System.Windows.Forms') 
 from System.Windows.Forms import AutoScaleMode, Button, CheckBox, ContextMenu, \
     CheckedListBox, DialogResult, FlatStyle, Label, MenuItem, \
-    RichTextBox, SelectionMode, TabControl, TabPage, TextBox, LinkLabel
+    RichTextBox, SelectionMode, TabControl, TabPage, TextBox, LinkLabel, \
+    TableLayoutPanel
 
 clr.AddReference('System.Drawing')
 from System.Drawing import Point, Size, ContentAlignment
@@ -107,17 +109,35 @@ class ConfigForm(CVForm):
       self.__cancel_button = self.__build_cancel_button()
       self.__restore_button = self.__build_restore_button()
       self.__tabcontrol = self.__build_tabcontrol()
-         
+      
+
+          # 2. -- create and configure the TableLayoutPanel
+      self.table_layout = TableLayoutPanel()
+      self.table_layout.RowCount = 2
+      self.table_layout.ColumnCount = 3
+      self.table_layout.Dock = DockStyle.Fill
+
+      self.table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
+      self.table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64))
+
+      self.table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
+      self.table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
+      self.table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
+
+      self.table_layout.Controls.Add(self.__tabcontrol, 0, 0)
+      self.table_layout.SetColumnSpan(self.__tabcontrol, 3)
+      self.table_layout.Controls.Add(self.__ok_button, 2, 1)
+      self.table_layout.Controls.Add(self.__cancel_button, 1, 1)
+      self.table_layout.Controls.Add(self.__restore_button, 0, 1)
+
       # 2. -- configure this form, and add all the gui components to it
       self.AutoScaleMode = AutoScaleMode.Font
-      self.ClientSize = Size(416, 375)
+      self.ClientSize = Size(700, 600)
+      self.FormBorderStyle = FormBorderStyle.Sizable
       self.Text = i18n.get("ConfigFormTitle")
    
-      self.Controls.Add(self.__ok_button)                                     
-      self.Controls.Add(self.__cancel_button)                                 
-      self.Controls.Add(self.__restore_button)                                
-      self.Controls.Add(self.__tabcontrol)                             
-      
+      self.Controls.Add(self.table_layout)
+
       # 3. -- define the keyboard focus tab traversal ordering
       self.__ok_button.TabIndex = 0                                        
       self.__cancel_button.TabIndex = 1                                    
@@ -135,8 +155,9 @@ class ConfigForm(CVForm):
       button = Button()
       button.DialogResult = DialogResult.OK
       button.Location = Point(228, 343)
-      button.Size = Size(80, 23)
+      button.Size = Size(80, 46)
       button.Text = i18n.get("ConfigFormOK")
+      button.Dock = DockStyle.Fill
       return button
 
 
@@ -148,8 +169,9 @@ class ConfigForm(CVForm):
       button = Button()
       button.Click += self.__fired_restore_defaults
       button.Location = Point(10, 343)
-      button.Size = Size(170, 23)
+      button.Size = Size(170, 46)
       button.Text = i18n.get("ConfigFormRestore")
+      button.Dock = DockStyle.Fill
       return button
 
 
@@ -161,8 +183,9 @@ class ConfigForm(CVForm):
       button = Button()
       button.DialogResult = DialogResult.Cancel
       button.Location = Point(315, 343)
-      button.Size = Size(90, 23)
+      button.Size = Size(90, 46)
       button.Text = i18n.get("ConfigFormCancel")
+      button.Dock = DockStyle.Fill
       return button
 
 
@@ -173,14 +196,14 @@ class ConfigForm(CVForm):
       
       tabcontrol = TabControl()
       tabcontrol.Location = Point(10, 15)
-      tabcontrol.Size = Size(395, 302)
+      tabcontrol.Size = Size(500, 400)
+      tabcontrol.Dock = DockStyle.Fill
       
       tabcontrol.Controls.Add( self.__build_comicvinetab() )
       tabcontrol.Controls.Add( self.__build_detailstab() )
       tabcontrol.Controls.Add( self.__build_behaviourtab() )
       tabcontrol.Controls.Add( self.__build_datatab() )
       tabcontrol.Controls.Add( self.__build_advancedtab() )
-      
       return tabcontrol
 
    
@@ -251,12 +274,28 @@ class ConfigForm(CVForm):
       label.Size = Size(299, 17)
       label.Text = i18n.get("ConfigFormDetailsText")
       
+       # Create TableLayoutPanel
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 4
+      table_layout.ColumnCount = 3
+      table_layout.Dock = DockStyle.Fill
+
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 66))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 66))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 66))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
+
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 50))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 50))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 100))
+
       # 2. --- the 'select all' button
       checkall_button = Button()
       checkall_button.Click += self.__fired_checkall
       checkall_button.Location = Point(280, 107)
       checkall_button.Size = Size(100, 23)
       checkall_button.Text = i18n.get("ConfigFormDetailsAll")
+      checkall_button.Dock = DockStyle.Fill
       
       # 3. --- the 'deselect all' button
       uncheckall_button = Button()
@@ -264,6 +303,7 @@ class ConfigForm(CVForm):
       uncheckall_button.Location = Point(280, 138)
       uncheckall_button.Size = Size(100, 23)
       uncheckall_button.Text = i18n.get("ConfigFormDetailsNone")
+      uncheckall_button.Dock = DockStyle.Fill
       
       # 4. --- build the update checklist (contains all the 'data' checkboxes)
       self.__update_checklist = CheckedListBox()
@@ -275,6 +315,7 @@ class ConfigForm(CVForm):
       self.__update_checklist.SelectionMode = SelectionMode.One
       self.__update_checklist.Size = Size(260, 170)
       self.__update_checklist.ItemCheck += self.__fired_update_gui
+      self.__update_checklist.Dock = DockStyle.Fill
       
       self.__update_checklist.Items.Add(ConfigForm.__SERIES_CB)
       self.__update_checklist.Items.Add(ConfigForm.__VOLUME_CB)
@@ -299,11 +340,22 @@ class ConfigForm(CVForm):
       self.__update_checklist.Items.Add(ConfigForm.__WEBPAGE_CB)
    
       # 5. --- add 'em all to this tabpage
-      tabpage.Controls.Add(label)
-      tabpage.Controls.Add(checkall_button)
-      tabpage.Controls.Add(uncheckall_button)
-      tabpage.Controls.Add(self.__update_checklist)
-      
+      tabpage.Controls.Add(table_layout)
+
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.SetColumnSpan(label, 3)
+      table_layout.Controls.Add(self.__update_checklist, 0, 1)
+      table_layout.SetColumnSpan(self.__update_checklist, 2)
+      table_layout.SetRowSpan(self.__update_checklist, 3)
+      table_layout.Controls.Add(checkall_button, 2, 1)
+      table_layout.Controls.Add(uncheckall_button, 2, 2)
+      '''
+      table_layout.Controls.Add(label)
+      table_layout.Controls.Add(checkall_button)
+      table_layout.Controls.Add(uncheckall_button)
+      table_layout.Controls.Add(self.__update_checklist)
+      '''
+
       return tabpage
 
    
@@ -315,6 +367,24 @@ class ConfigForm(CVForm):
       tabpage = TabPage()
       tabpage.Text = i18n.get("ConfigFormBehaviourTab")
       
+      # Create TableLayoutPanel
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 8
+      table_layout.ColumnCount = 2
+      table_layout.Dock = DockStyle.Fill
+      
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
+
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 60))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100))
+
       # 1. --- build the 'When scraping for the first time' label
       first_scrape_label = Label()
       first_scrape_label.AutoSize = False
@@ -322,70 +392,83 @@ class ConfigForm(CVForm):
       first_scrape_label.Location = Point(52, 27)
       first_scrape_label.Text = i18n.get("ConfigFormFirstScrapeLabel")
       first_scrape_label.Size = Size(300, 17)
-      
+      first_scrape_label.Dock = DockStyle.Fill
+      first_scrape_label.TextAlign = ContentAlignment.BottomLeft
+
       # 1. --- build the 'autochoose series' checkbox
       self.__autochoose_series_cb = CheckBox()
-      self.__autochoose_series_cb.AutoSize = False
+      #self.__autochoose_series_cb.AutoSize = False
       self.__autochoose_series_cb.FlatStyle = FlatStyle.System
       self.__autochoose_series_cb.Location = Point(82, 45)
       self.__autochoose_series_cb.Size = Size(300, 34)
-      self.__autochoose_series_cb.Text =i18n.get("ConfigFormAutochooseSeriesCB")
+      self.__autochoose_series_cb.Text = "     "+i18n.get("ConfigFormAutochooseSeriesCB")
       self.__autochoose_series_cb.CheckedChanged += self.__fired_update_gui
-       
+      self.__autochoose_series_cb.Dock = DockStyle.Fill
+
       # 2. --- build the 'confirm issue' checkbox
       self.__confirm_issue_cb = CheckBox()
-      self.__confirm_issue_cb.AutoSize = False
+      #self.__confirm_issue_cb.AutoSize = False
       self.__confirm_issue_cb.FlatStyle = FlatStyle.System
       self.__confirm_issue_cb.Location = Point(82, 75)
       self.__confirm_issue_cb.Size = Size(300, 34)
-      self.__confirm_issue_cb.Text = i18n.get("ConfigFormConfirmIssueCB")
+      self.__confirm_issue_cb.Text = "     "+ i18n.get("ConfigFormConfirmIssueCB")
       self.__confirm_issue_cb.CheckedChanged += self.__fired_update_gui
-      
+      self.__confirm_issue_cb.Dock = DockStyle.Fill
+
       # 3. -- build the 'use fast rescrape' checkbox
       self.__fast_rescrape_cb = CheckBox()
-      self.__fast_rescrape_cb.AutoSize = False
+      #self.__fast_rescrape_cb.AutoSize = False
       self.__fast_rescrape_cb.FlatStyle = FlatStyle.System
       self.__fast_rescrape_cb.Location = Point(52, 116)
       self.__fast_rescrape_cb.Size = Size(300, 34)
       self.__fast_rescrape_cb.Text = i18n.get("ConfigFormRescrapeCB")
       self.__fast_rescrape_cb.CheckedChanged += self.__fired_update_gui
-      
+      self.__fast_rescrape_cb.Dock = DockStyle.Fill
+
       # 4. -- build the 'add rescrape hints to notes' checkbox
       self.__rescrape_notes_cb = CheckBox()
-      self.__rescrape_notes_cb.AutoSize = False
+      #self.__rescrape_notes_cb.AutoSize = False
       self.__rescrape_notes_cb.FlatStyle = FlatStyle.System
       self.__rescrape_notes_cb.Location = Point(82, 151)
       self.__rescrape_notes_cb.Size = Size(270, 17)
-      self.__rescrape_notes_cb.Text = i18n.get("ConfigFormRescrapeNotesCB")
+      self.__rescrape_notes_cb.Text = "     "+ i18n.get("ConfigFormRescrapeNotesCB")
       self.__rescrape_notes_cb.CheckedChanged += self.__fired_update_gui
-      
+      self.__rescrape_notes_cb.Dock = DockStyle.Fill
+
       # 5. -- build the 'add rescrape hints to tags' checkbox
       self.__rescrape_tags_cb = CheckBox()
-      self.__rescrape_tags_cb.AutoSize = False
+      #self.__rescrape_tags_cb.AutoSize = False
       self.__rescrape_tags_cb.FlatStyle = FlatStyle.System
       self.__rescrape_tags_cb.Location = Point(82, 181)
       self.__rescrape_tags_cb.Size = Size(270, 17)
-      self.__rescrape_tags_cb.Text = i18n.get("ConfigFormRescrapeTagsCB")
+      self.__rescrape_tags_cb.Text = "     "+ i18n.get("ConfigFormRescrapeTagsCB")
       self.__rescrape_tags_cb.CheckedChanged += self.__fired_update_gui 
-   
+      self.__rescrape_tags_cb.Dock = DockStyle.Fill
+
       # 6. --- build the 'specify series name' checkbox
       self.__summary_dialog_cb = CheckBox()
-      self.__summary_dialog_cb.AutoSize = False
+      #self.__summary_dialog_cb.AutoSize = False
       self.__summary_dialog_cb.FlatStyle = FlatStyle.System
       self.__summary_dialog_cb.Location = Point(52, 214)
       self.__summary_dialog_cb.Size = Size(300, 34)
       self.__summary_dialog_cb.Text = i18n.get("ConfigFormShowSummaryCB")
       self.__summary_dialog_cb.CheckedChanged += self.__fired_update_gui 
-            
+      self.__summary_dialog_cb.Dock = DockStyle.Fill
+
       # 7. --- add 'em all to the tabpage 
-      tabpage.Controls.Add(first_scrape_label)
-      tabpage.Controls.Add(self.__autochoose_series_cb)
-      tabpage.Controls.Add(self.__confirm_issue_cb)
-      tabpage.Controls.Add(self.__fast_rescrape_cb)
-      tabpage.Controls.Add(self.__rescrape_tags_cb)
-      tabpage.Controls.Add(self.__rescrape_notes_cb)
-      tabpage.Controls.Add(self.__summary_dialog_cb)
+      table_layout.Controls.Add(first_scrape_label,0,0)
+      table_layout.SetColumnSpan(first_scrape_label, 2)
+      table_layout.Controls.Add(self.__autochoose_series_cb,1,1)
+      table_layout.Controls.Add(self.__confirm_issue_cb,1,2)
+      table_layout.Controls.Add(self.__fast_rescrape_cb,0,3)
+      table_layout.SetColumnSpan(self.__fast_rescrape_cb, 2)
+      table_layout.Controls.Add(self.__rescrape_tags_cb,1,4)
+      table_layout.Controls.Add(self.__rescrape_notes_cb,1,5)
+      table_layout.Controls.Add(self.__summary_dialog_cb,0,6)
+      table_layout.SetColumnSpan(self.__summary_dialog_cb, 2)
       
+      tabpage.Controls.Add(table_layout)
+
       return tabpage
    
    
@@ -397,59 +480,86 @@ class ConfigForm(CVForm):
       tabpage = TabPage()
       tabpage.Text = i18n.get("ConfigFormDataTab")
       
+      # Create TableLayoutPanel
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 6
+      table_layout.ColumnCount = 2
+      table_layout.Dock = DockStyle.Fill
+      
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
+
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 60))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100))
+
       # 1. --- build the 'convert imprints checkbox'
       self.__convert_imprints_cb = CheckBox()
-      self.__convert_imprints_cb.AutoSize = False
+      #self.__convert_imprints_cb.AutoSize = False
       self.__convert_imprints_cb.FlatStyle = FlatStyle.System
       self.__convert_imprints_cb.Location = Point(52, 35)
       self.__convert_imprints_cb.Size = Size(300, 34)
       self.__convert_imprints_cb.Text = i18n.get("ConfigFormImprintsCB")
       self.__convert_imprints_cb.CheckedChanged += self.__fired_update_gui
+      self.__convert_imprints_cb.Dock = DockStyle.Fill
        
       # 2. -- build the 'overwrite existing' checkbox
       self.__ow_existing_cb = CheckBox()
-      self.__ow_existing_cb.AutoSize = False
+      #self.__ow_existing_cb.AutoSize = False
       self.__ow_existing_cb.FlatStyle = FlatStyle.System
       self.__ow_existing_cb.Location = Point(52, 85)
       self.__ow_existing_cb.Size = Size(310, 34)
       self.__ow_existing_cb.Text = i18n.get("ConfigFormOverwriteCB")
       self.__ow_existing_cb.CheckedChanged += self.__fired_update_gui 
+      self.__ow_existing_cb.Dock = DockStyle.Fill
    
       # 3. --- build the 'ignore blanks' checkbox
       self.__ignore_blanks_cb = CheckBox()                                          
-      self.__ignore_blanks_cb.AutoSize = False                                       
+      #self.__ignore_blanks_cb.AutoSize = False                                       
       self.__ignore_blanks_cb.FlatStyle = FlatStyle.System                          
       self.__ignore_blanks_cb.Location = Point(82, 125)                             
       self.__ignore_blanks_cb.Size = Size(270, 34)                                  
       self.__ignore_blanks_cb.TextAlign = ContentAlignment.TopLeft                                  
       self.__ignore_blanks_cb.Text = i18n.get("ConfigFormOverwriteEmptyCB")                  
-      self.__ignore_blanks_cb.CheckedChanged += self.__fired_update_gui 
+      self.__ignore_blanks_cb.CheckedChanged += self.__fired_update_gui
+      self.__ignore_blanks_cb.Dock = DockStyle.Fill
    
       # 4. --- build the 'download thumbnails' checkbox
       self.__download_thumbs_cb = CheckBox()
-      self.__download_thumbs_cb.AutoSize = False
+      #self.__download_thumbs_cb.AutoSize = False
       self.__download_thumbs_cb.FlatStyle = FlatStyle.System
       self.__download_thumbs_cb.Location = Point(52, 165)
       self.__download_thumbs_cb.Size = Size(300, 34)
       self.__download_thumbs_cb.Text = i18n.get("ConfigFormFilelessCB")
       self.__download_thumbs_cb.CheckedChanged += self.__fired_update_gui
+      self.__download_thumbs_cb.Dock = DockStyle.Fill
       
       # 5. --- build the 'preserve thumbnails' checkbox
       self.__preserve_thumbs_cb = CheckBox()
-      self.__preserve_thumbs_cb.AutoSize = False
+      #self.__preserve_thumbs_cb.AutoSize = False
       self.__preserve_thumbs_cb.FlatStyle = FlatStyle.System
       self.__preserve_thumbs_cb.Location = Point(82, 205)
       self.__preserve_thumbs_cb.Size = Size(270, 34)
       self.__preserve_thumbs_cb.TextAlign = ContentAlignment.TopLeft
       self.__preserve_thumbs_cb.Text = i18n.get("ConfigFormFilelessOverwriteCB")
       self.__preserve_thumbs_cb.CheckedChanged += self.__fired_update_gui
+      self.__preserve_thumbs_cb.Dock = DockStyle.Fill
             
       # 6. --- add 'em all to the tabpage 
-      tabpage.Controls.Add(self.__ow_existing_cb)
-      tabpage.Controls.Add(self.__ignore_blanks_cb)
-      tabpage.Controls.Add(self.__convert_imprints_cb)
-      tabpage.Controls.Add(self.__download_thumbs_cb)
-      tabpage.Controls.Add(self.__preserve_thumbs_cb)
+
+      tabpage.Controls.Add(table_layout)
+
+      table_layout.Controls.Add(self.__ow_existing_cb,0,0)
+      table_layout.SetColumnSpan(self.__ow_existing_cb, 2)
+      table_layout.Controls.Add(self.__ignore_blanks_cb,1,1)
+      table_layout.Controls.Add(self.__convert_imprints_cb,0,2)
+      table_layout.SetColumnSpan(self.__convert_imprints_cb, 2)
+      table_layout.Controls.Add(self.__download_thumbs_cb,0,3)
+      table_layout.SetColumnSpan(self.__download_thumbs_cb, 2)
+      table_layout.Controls.Add(self.__preserve_thumbs_cb,1,4)
       
       return tabpage
   

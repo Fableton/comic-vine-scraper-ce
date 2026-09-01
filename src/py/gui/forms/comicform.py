@@ -135,7 +135,7 @@ class ComicForm(CVForm):
       label.UseMnemonic = False
       label.Text = '' # updated everytime we start scraping a new comic
       label.Location = Point(13, 45)
-      label.Size = Size(320, 15)
+      label.Size = Size(320, 30)
       label.Anchor = AnchorStyles.Top | AnchorStyles.Left |AnchorStyles.Right
       label.AutoSize = False
       return label
@@ -169,7 +169,7 @@ class ComicForm(CVForm):
          self.Close()
       button.Click+=cancel
       button.Location = Point(78, 572)
-      button.Size = Size(190, 23)
+      button.Size = Size(250, 46)
       button.Anchor = AnchorStyles.Bottom
       return button
    

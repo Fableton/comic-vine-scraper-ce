@@ -54,7 +54,7 @@ class FinishForm(CVForm):
       self.AcceptButton = ok
       self.AutoScaleMode = AutoScaleMode.Font
       self.Text = i18n.get("FinishFormTitle").format(Resources.SCRIPT_VERSION)
-      self.ClientSize = Size(300, 90)
+      self.ClientSize = Size(300, 150)
    
       self.Controls.Add(scrape_label)
       self.Controls.Add(skip_label)
@@ -73,7 +73,7 @@ class FinishForm(CVForm):
       label = Label()
       label.UseMnemonic = False
       label.Location = Point(10, 10)
-      label.Size = Size(280, 13)
+      label.Size = Size(280, 26)
       label.TextAlign = ContentAlignment.MiddleCenter
       label.Text = i18n.get("FinishFormScrapedSingle") if scraped_n==1 else \
          i18n.get("FinishFormScrapedPlural").format(scraped_n) 
@@ -89,8 +89,8 @@ class FinishForm(CVForm):
 
       label = Label()
       label.UseMnemonic = False
-      label.Location = Point(10, 30) 
-      label.Size = Size(280, 13)
+      label.Location = Point(10, 40) 
+      label.Size = Size(280, 26)
       label.TextAlign = ContentAlignment.MiddleCenter
       label.Text = i18n.get("FinishFormSkippedSingle") if skipped_n==1 else \
          i18n.get("FinishFormSkippedPlural").format(skipped_n)
@@ -102,8 +102,8 @@ class FinishForm(CVForm):
 
       button = Button()
       button.DialogResult = DialogResult.OK
-      button.Location = Point(105, 58)
-      button.Size = Size(90, 23)
+      button.Location = Point(105, 68)
+      button.Size = Size(90, 46)
       button.Text = i18n.get("MessageBoxOk")
       button.UseVisualStyleBackColor = True
       return button

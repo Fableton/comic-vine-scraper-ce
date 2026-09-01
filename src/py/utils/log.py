@@ -153,27 +153,26 @@ def handle_error(error):
    
    if __app_window:     
       handled = False
-      if type(error) == DatabaseConnectionError:  
-         # if this is a DatabaseConnectionError, then it is a semi-expected 
-         # error that may get a special error message
-         if error.get_error_code_s() == "100": # coryhigh: i18n
-            MessageBox.Show(__app_window,  # invalid api key
-               i18n.get("LogDBErrorApiKeyText").format(error.get_db_name_s()), 
-               i18n.get("LogDBErrorTitle"), MessageBoxButtons.OK, 
-               MessageBoxIcon.Warning)
-            handled = True
-         elif error.get_error_code_s() == "107":
-            MessageBox.Show(__app_window,  # rate limit reached
-               i18n.get("LogDBErrorRateText").format(error.get_db_name_s()), 
-               i18n.get("LogDBErrorTitle"), MessageBoxButtons.OK, 
-               MessageBoxIcon.Warning)
-            handled = True
-         elif error.get_error_code_s() == "0":
-            MessageBox.Show(__app_window,  # generic 
-               i18n.get("LogDBErrorText").format(error.get_db_name_s()), 
-               i18n.get("LogDBErrorTitle"), MessageBoxButtons.OK, 
-               MessageBoxIcon.Warning)
-            handled = True
+      error_code = error.get_error_code_s()
+      error_details = repr(error)  # Serializa el objeto error
+      if error_code == "100":  # coryhigh: i18n
+         MessageBox.Show(__app_window,  # invalid api key
+            i18n.get("LogDBErrorApiKeyText").format(error.get_db_name_s())+ "\n" +(error_details), 
+            i18n.get("LogDBErrorTitle"), MessageBoxButtons.OK, 
+            MessageBoxIcon.Warning)
+         handled = True
+      elif error_code == "107":
+         MessageBox.Show(__app_window,  # rate limit reached
+            i18n.get("LogDBErrorRateText").format(error.get_db_name_s())+ "\n" +(error_details), 
+            i18n.get("LogDBErrorTitle"), MessageBoxButtons.OK, 
+            MessageBoxIcon.Warning)
+         handled = True
+      elif error_code == "0":
+         MessageBox.Show(__app_window,  # generic 
+            i18n.get("LogDBErrorText").format(error.get_db_name_s())+ "\n" +(error_details), 
+            i18n.get("LogDBErrorTitle"), MessageBoxButtons.OK, 
+            MessageBoxIcon.Warning)
+         handled = True
          
       if not handled:
          # all other errors are considered "unexpected", and handled generically
