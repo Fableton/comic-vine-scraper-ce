@@ -65,7 +65,8 @@ class SeriesForm(CVForm):
    log.debug('Init SeriesForm')
    ''' Dialog to pick a comic series. '''
 
-   def __init__(self, scraper, book, series_refs, search_terms_s):
+   def __init__(self, scraper, book, series_refs, search_terms_s,
+         has_previous_b=False):
       self.__config = scraper.config
       self.__series_refs = list(series_refs)
       self.__matchscore = MatchScore()
@@ -73,6 +74,9 @@ class SeriesForm(CVForm):
       self.__ok_button = None
       self.__skip_button = None
       self.__issues_button = None
+      # whether the "Previous Comic" button should be enabled -- lets the
+      # user go back and redo the immediately-previous comic book
+      self.__has_previous_b = has_previous_b
       self.__table = None
       self.__coverpanel = None
       self.__chosen_index = None
@@ -102,7 +106,8 @@ class SeriesForm(CVForm):
       self.__skip_button = self.__build_skipbutton()
       search_button = self.__build_searchbutton()
       self.__issues_button = self.__build_issuesbutton()
-      label = self.__build_label(search_terms_s, len(self.__series_refs)) 
+      previous_button = self.__build_previousbutton()
+      label = self.__build_label(search_terms_s, len(self.__series_refs))
       self.__table = self.__build_table(self.__series_refs, book, self.__ok_button)
       self.__table_container = self.__build_filters_panel(self.__table)
       self.__coverpanel = self.__build_coverpanel(book)
@@ -125,10 +130,12 @@ class SeriesForm(CVForm):
       table_layout.Controls.Add(label,0,0); table_layout.SetColumnSpan(label, 5)
       table_layout.Controls.Add(self.__table_container,0,1); table_layout.SetColumnSpan(self.__table_container, 5)
       table_layout.Controls.Add(self.__ok_button,0,2); table_layout.Controls.Add(self.__skip_button,1,2)
+      table_layout.Controls.Add(previous_button,2,2)
       table_layout.Controls.Add(search_button,3,2); table_layout.Controls.Add(self.__issues_button,4,2)
       table_layout.Controls.Add(self.__coverpanel,5,0); table_layout.SetRowSpan(self.__coverpanel, 3)
-      self.__ok_button.TabIndex = 1; self.__skip_button.TabIndex = 2; search_button.TabIndex = 3
-      self.__issues_button.TabIndex = 4; self.__coverpanel.TabIndex = 5; self.__table.TabIndex = 6
+      self.__ok_button.TabIndex = 1; self.__skip_button.TabIndex = 2; previous_button.TabIndex = 3
+      search_button.TabIndex = 4; self.__issues_button.TabIndex = 5
+      self.__coverpanel.TabIndex = 6; self.__table.TabIndex = 7
       self.Shown += self.__change_table_selection_fired
       # actualizar posicion filtros al mostrar
       self.Shown += self.__update_filter_positions
@@ -410,6 +417,22 @@ class SeriesForm(CVForm):
       return button
    
    # ==========================================================================
+   def __build_previousbutton(self):
+      ''' builds and returns the "previous comic" button for this form. it
+      is only enabled when there's actually a previous comic to go back to
+      (self.__has_previous_b), letting the user redo it in case they picked
+      the wrong series/issue for it. '''
+
+      button = Button()
+      button.DialogResult = DialogResult.Abort
+      button.Size = Size(115, 24)
+      button.Text = i18n.get("SeriesFormPreviousComic")
+      button.Dock = DockStyle.Fill
+      button.Enabled = self.__has_previous_b
+      return button
+
+
+   # ==========================================================================
    def __build_issuesbutton(self):
       ''' builds and return the 'show issues' button for this form '''
       
@@ -498,6 +521,8 @@ class SeriesForm(CVForm):
             result = SeriesFormResult( "SKIP" )
       elif dialogAnswer == DialogResult.Retry:
          result = SeriesFormResult( "SEARCH" )
+      elif dialogAnswer == DialogResult.Abort:
+         result = SeriesFormResult( "PREVIOUS" )
       else:
          raise Exception()
       
@@ -619,12 +644,15 @@ class SeriesFormResult(object):
    5) "OK" means the user chose a SeriesRef, and the script
       should try to automatically choose the correct issue for that SeriesRef.
    6) "SHOW" means the user chose a SeriesRef, and the script
-      should NOT automatically choose issue for that SeriesRef--it should 
+      should NOT automatically choose issue for that SeriesRef--it should
       show the IssueForm and let the user choose manually.
-      
+   7) "PREVIOUS" means the user chose to go back and redo the
+      immediately-previous comic book (only possible when this form was
+      built with has_previous_b=True)
+
    Note that if the SeriesFormResult has an id of 'OK' or 'SHOW', it must
-   also have a non-None 'ref', which is of course the actual SeriesRef that 
-   the user chose.    
+   also have a non-None 'ref', which is of course the actual SeriesRef that
+   the user chose.
    '''
    
    #===========================================================================
@@ -643,7 +671,8 @@ class SeriesFormResult(object):
       '''
 
       if id != "OK" and id != "SHOW" and id != "CANCEL" and \
-         id != "SKIP" and id != "SEARCH" and id != "PERMSKIP":
+         id != "SKIP" and id != "SEARCH" and id != "PERMSKIP" and \
+         id != "PREVIOUS":
          raise Exception()
       if (id == "OK" or id == "SHOW") and ref == None:
          raise Exception()
@@ -699,5 +728,7 @@ class SeriesFormResult(object):
          return "SHOW ISSUES for: '" + sstr(self.get_ref()) + "'"
       elif self.equals("OK"):
          return "SCRAPE using: '" + sstr(self.get_ref()) + "'"
+      elif self.equals("PREVIOUS"):
+         return "GO BACK to redo the previous comic book"
       else:
          raise Exception()

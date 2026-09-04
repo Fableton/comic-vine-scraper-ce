@@ -534,8 +534,9 @@ class ScrapeEngine(object):
             if not series_refs or not search_terms_s:
                return BookStatus("UNSCRAPED") # rare but possible, bug 77
             series_form_result =\
-               self.__choose_series_ref(book, search_terms_s, series_refs)
-            
+               self.__choose_series_ref(book, search_terms_s, series_refs,
+                  has_previous_b)
+
             if series_form_result.equals("CANCEL") or self.__cancelled_b:
                self.__cancelled_b = True
                return BookStatus("SKIPPED") # user says 'cancel'
@@ -544,8 +545,11 @@ class ScrapeEngine(object):
             elif series_form_result.equals("PERMSKIP"):
                book.skip_forever()
                return BookStatus("SKIPPED") # user says 'skip book always'
-            elif series_form_result.equals("SEARCH"): 
+            elif series_form_result.equals("SEARCH"):
                return BookStatus("UNSCRAPED") # user says 'search again'
+            elif series_form_result.equals("PREVIOUS"):
+               # user wants to go back and redo the immediately-previous book
+               return BookStatus("PREVIOUS")
             elif series_form_result.equals("SHOW") or \
                  series_form_result.equals("OK"): # user says 'ok'
                scraped_series = ScrapedSeries( series_form_result.get_ref() )
@@ -691,23 +695,27 @@ class ScrapeEngine(object):
 
 
    # ==========================================================================   
-   def __choose_series_ref(self, book, search_terms_s, series_refs):
+   def __choose_series_ref(self, book, search_terms_s, series_refs,
+         has_previous_b=False):
       '''
       This method displays the SeriesForm, a dialog that shows all of the
       SeriesRefs from a database query and asks the user to choose one.
-      
+
       'book' -> the book that we are currently scraping
       'search_terms_s' -> the search terms we used to find the SeriesRefs
       'series_refs' -> a set of SeriesRefs; the results of the search
-      
-      This method returns a SeriesFormResult object (from the SeriesForm). 
+      'has_previous_b' -> whether there's a previous comic book that the user
+          can go back and redo (enables the "Previous Comic" button).
+
+      This method returns a SeriesFormResult object (from the SeriesForm).
       '''
-      
-      
+
+
       result = SeriesFormResult("SEARCH") # default
       if series_refs:
          log.debug('displaying the series selection dialog...')
-         with  SeriesForm(self, book, series_refs, search_terms_s) as sform:
+         with  SeriesForm(self, book, series_refs, search_terms_s,
+               has_previous_b) as sform:
             result = sform.show_form() 
          log.debug('   ...user chose to ', result.get_debug_string())
       return result
