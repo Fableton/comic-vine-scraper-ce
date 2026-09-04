@@ -22,10 +22,10 @@ clr.AddReference('System.Drawing')
 from System.Drawing import Point, Size
 
 clr.AddReference('System.Windows.Forms')
-from System.Windows.Forms import AutoScaleMode, Button, \
-   DataGridViewAutoSizeColumnMode, DataGridViewContentAlignment, \
+from System.Windows.Forms import AutoScaleMode, Button, ContextMenu, \
+   Cursor, DataGridViewAutoSizeColumnMode, DataGridViewContentAlignment, \
    DataGridViewSelectionMode, DataGridViewTriState, DialogResult, \
-   Keys, Label, FormBorderStyle , TableLayoutPanel, \
+   Keys, Label, FormBorderStyle , MenuItem, TableLayoutPanel, \
    DataGridViewColumnHeadersHeightSizeMode, TextBox, Panel, ToolTip, \
    DataGridViewColumnSortMode, SortOrder, MouseButtons, Timer
 
@@ -301,12 +301,69 @@ class SeriesForm(CVForm):
       for col in table.Columns:
          col.SortMode = DataGridViewColumnSortMode.Programmatic
       table.ColumnHeaderMouseClick += self.__header_mouse_clicked
+      table.CellMouseDown += self.__cell_mouse_down
       for i, ref in enumerate(series_refs):
          self.__add_row(table, ref, i)
       table.SelectionChanged += self.__change_table_selection_fired
       self.__apply_sort()
       log.debug('SeriesForm: initial rows loaded=%d' % table.Rows.Count)
       return table
+
+   # ==========================================================================
+   def __cell_mouse_down(self, sender, args):
+      ''' Called whenever the user presses a mouse button over a table
+      cell. A right-click selects that row and shows a context menu
+      letting the user ignore its Publisher (persistently, or for this
+      scrape session only). '''
+      try:
+         if args.Button != MouseButtons.Right or args.RowIndex < 0:
+            return
+         row = self.__table.Rows[args.RowIndex]
+         model_index = row.Cells[6].Value
+         if model_index is None or not isinstance(model_index, (int, long)) \
+               or not (0 <= model_index < len(self.__series_refs)):
+            return
+         publisher_s = self.__series_refs[model_index].publisher_s
+         if not publisher_s:
+            return
+         self.__table.ClearSelection()
+         row.Selected = True
+
+         menu = ContextMenu()
+         menu.MenuItems.Add(MenuItem(
+            i18n.get("SeriesFormIgnorePublisher").format(publisher_s),
+            lambda s, ea, p=publisher_s: self.__ignore_publisher(p, False)))
+         menu.MenuItems.Add(MenuItem(
+            i18n.get("SeriesFormIgnorePublisherSession").format(publisher_s),
+            lambda s, ea, p=publisher_s: self.__ignore_publisher(p, True)))
+         # args.X/Y are relative to the CELL, not the table -- use the
+         # cursor's actual screen position instead, converted to the
+         # table's client coordinates, so the menu shows up where the
+         # user actually clicked.
+         menu.Show(self.__table, self.__table.PointToClient(Cursor.Position))
+      except Exception as e:
+         log.debug('SeriesForm: cell_mouse_down/context menu error %s' % e)
+
+   # ==========================================================================
+   def __ignore_publisher(self, publisher_s, session_only_b):
+      ''' Adds the given publisher to the ignore list -- persistently, or
+      (if 'session_only_b') only for the rest of this scrape session --
+      and immediately removes every series from this dialog's own table
+      that's published by it. '''
+      if session_only_b:
+         self.__config.add_session_ignored_publisher(publisher_s)
+      else:
+         self.__config.add_ignored_publisher(publisher_s)
+         self.__config.save_defaults()
+
+      publisher_lower_s = publisher_s.lower().strip()
+      self.__series_refs = [ref for ref in self.__series_refs
+         if ref.publisher_s.lower().strip() != publisher_lower_s]
+      if not self.__series_refs:
+         # nothing left to show -- skip this book, same as clicking Skip
+         self.__skip_button.PerformClick()
+         return
+      self.__apply_filters()
 
    # ==========================================================================
    def __header_mouse_clicked(self, sender, args):

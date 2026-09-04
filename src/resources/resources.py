@@ -35,6 +35,9 @@ class Resources(object):
    # the location of the app's recent (comic book) search terms file.
    SEARCH_HISTORY_FILE = None
 
+   # the location of the app's "publishers seen so far" cache file.
+   KNOWN_PUBLISHERS_FILE = None
+
    # the location of the app's localization default strings file
    I18N_DEFAULTS_FILE = None
    
@@ -107,6 +110,7 @@ class Resources(object):
       cls.GEOMETRY_FILE = profile_dir + r'\geometry.dat'
       cls.SERIES_FILE = profile_dir + r'\series.dat'
       cls.SEARCH_HISTORY_FILE = profile_dir + r'\searchhistory.dat'
+      cls.KNOWN_PUBLISHERS_FILE = profile_dir + r'\publishers.dat'
       cls.LOCAL_CACHE_DIRECTORY = profile_dir + r'\localCache'
       cls.I18N_DEFAULTS_FILE = script_dir + r"\en.zip"
       

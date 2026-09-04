@@ -74,9 +74,9 @@ def __find_best_series(book, config):
    # 1. obtain SeriesRefs for this book, removing some as dictated by prefs
    series_refs = db.query_series_refs( book.series_s, 
       config.ignored_searchterms_sl )
-   series_refs = dbutils.filter_series_refs( 
+   series_refs = dbutils.filter_series_refs(
          series_refs,
-         config.ignored_publishers_sl, 
+         config.effective_ignored_publishers_sl,
          config.ignored_before_year_n,
          config.ignored_after_year_n,
          config.never_ignore_threshold_n)

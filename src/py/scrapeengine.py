@@ -8,7 +8,7 @@ import log
 import utils
 from utils import sstr, natural_key
 from resources import Resources 
-from configuration import Configuration
+from configuration import Configuration, record_known_publisher
 from comicform import ComicForm
 from seriesform import SeriesForm, SeriesFormResult
 from issueform import IssueForm, IssueFormResult
@@ -852,10 +852,16 @@ class ScrapeEngine(object):
          
          series_refs = db.query_series_refs( search_terms_s,
             self.config.ignored_searchterms_sl, callback )
-         
+
+      # 1a. record every publisher we saw, so the ConfigForm's "ignore
+      #     publisher" combobox can offer it later (see ROADMAP.md)
+      for series_ref in series_refs:
+         if series_ref.publisher_s:
+            record_known_publisher(series_ref.publisher_s)
+
       # 2. filter out any series that the user has specified
       filtered_refs = dbutils.filter_series_refs(series_refs,
-         self.config.ignored_publishers_sl, 
+         self.config.effective_ignored_publishers_sl,
          self.config.ignored_before_year_n,
          self.config.ignored_after_year_n,
          self.config.never_ignore_threshold_n)

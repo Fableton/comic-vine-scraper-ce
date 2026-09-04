@@ -121,6 +121,10 @@ class Configuration(object):
       self.__advanced_settings_s = None
       
       self.__ignored_publishers_sl = None # ignore publishers out of searches
+      # publishers to ignore for this scrape session only (never persisted;
+      # unlike __ignored_publishers_sl, this is NOT reset when
+      # __set_advanced_settings_s() runs, since it isn't stored there)
+      self.__session_ignored_publishers_sl = set()
       self.__ignored_searchterms_sl = None # ignore terms when searching
       self.__publisher_aliases_sm = None # map of publisher names to new names
       self.__user_imprints_sm = None # map of publisher names to imprints
@@ -275,15 +279,99 @@ class Configuration(object):
             self.__max_search_results_n = \
                min(5000, max( 10, int(float(match.group(1))) ) )
 
-   advanced_settings_s = property( lambda self : self.__advanced_settings_s, 
+   advanced_settings_s = property( lambda self : self.__advanced_settings_s,
       __set_advanced_settings_s, __set_advanced_settings_s,
       "The advanced settings string for this Configuration. Not None." )
-   
-   ignored_publishers_sl = property( 
+
+
+   #===========================================================================
+   def add_ignored_publisher(self, publisher_s):
+      '''
+      Adds the given publisher name to this Configuration's persisted list
+      of ignored publishers (see 'ignored_publishers_sl'). Does nothing if
+      'publisher_s' is blank, or if it's (case-insensitively) already in
+      that list.
+      '''
+      publisher_s = (publisher_s or "").strip()
+      if not publisher_s or publisher_s.lower() in self.__ignored_publishers_sl:
+         return
+      line_s = "IGNORE_PUBLISHER={0}".format(publisher_s)
+      self.__set_advanced_settings_s(
+         (self.__advanced_settings_s + "\n" + line_s).strip())
+
+
+   #===========================================================================
+   def remove_ignored_publisher(self, publisher_s):
+      '''
+      Removes the given publisher name (case-insensitively) from this
+      Configuration's persisted list of ignored publishers, if it's
+      currently in it. Does nothing otherwise.
+      '''
+      publisher_s = (publisher_s or "").strip().lower()
+      if not publisher_s or publisher_s not in self.__ignored_publishers_sl:
+         return
+      pattern_s = r"(?i)^\s*IGNORE_PUBLISHER\s*=\s*['\"]?{0}['\"]?\s*$".format(
+         re.escape(publisher_s))
+      lines_sl = [line_s for line_s in self.__advanced_settings_s.split("\n")
+         if not re.match(pattern_s, line_s.strip())]
+      self.__set_advanced_settings_s("\n".join(lines_sl))
+
+
+   #===========================================================================
+   def get_ignored_publishers_display_sl(self):
+      '''
+      Like 'ignored_publishers_sl', but each name keeps the capitalization
+      it was originally added with (e.g. "Marvel"), instead of being
+      lower-cased. Meant for displaying the list to the user; use
+      'ignored_publishers_sl' (or 'effective_ignored_publishers_sl') for
+      actual filtering, since those are always lower-cased for comparison.
+      '''
+      pattern_s = r"(?i)^\s*IGNORE_PUBLISHER\s*=\s*['\"]?(.+?)['\"]?$"
+      seen_lower_sl = set()
+      result_sl = []
+      for line_s in self.__advanced_settings_s.split("\n"):
+         match = re.match(pattern_s, line_s.strip())
+         if match:
+            name_s = match.group(1).strip()
+            if name_s and name_s.lower() not in seen_lower_sl:
+               seen_lower_sl.add(name_s.lower())
+               result_sl.append(name_s)
+      return sorted(result_sl, key=lambda s: s.lower())
+
+
+   #===========================================================================
+   def add_session_ignored_publisher(self, publisher_s):
+      '''
+      Adds the given publisher name to this Configuration's in-memory,
+      this-session-only list of ignored publishers (see
+      'session_ignored_publishers_sl'). Unlike 'add_ignored_publisher',
+      this is never persisted to disk. Does nothing if 'publisher_s' is
+      blank.
+      '''
+      publisher_s = (publisher_s or "").strip().lower()
+      if publisher_s:
+         self.__session_ignored_publishers_sl.add(publisher_s)
+
+
+   ignored_publishers_sl = property(
       lambda self : list(self.__ignored_publishers_sl), None, None,
       "List of publisher names to filter out of series searches. Not None.")
-   
-   ignored_searchterms_sl = property( 
+
+   session_ignored_publishers_sl = property(
+      lambda self : list(self.__session_ignored_publishers_sl), None, None,
+      "List of publisher names to filter out for this scrape session only "
+      "(i.e. until this Configuration object goes away); never persisted "
+      "to disk. Not None.")
+
+   effective_ignored_publishers_sl = property(
+      lambda self : list(
+         self.__ignored_publishers_sl | self.__session_ignored_publishers_sl),
+      None, None,
+      "Union of ignored_publishers_sl and session_ignored_publishers_sl; "
+      "this is the list that should actually be used to filter searches. "
+      "Not None.")
+
+   ignored_searchterms_sl = property(
       lambda self : list(self.__ignored_searchterms_sl), None, None,
       "List of search terms to filter out of series searches. Not None.")
    
@@ -679,10 +767,45 @@ class Configuration(object):
       
 
             
-      advanced_lines_s = "".join(lines_sl) 
+      advanced_lines_s = "".join(lines_sl)
       if advanced_lines_s:
          retval += "\n" + advanced_lines_s + \
          "-------------------------------------------------------------------"
-   
+
       return retval
-  
+
+
+#==============================================================================
+def load_known_publishers_sl():
+   '''
+   Returns an alphabetically sorted list of every distinct publisher name
+   (string) that has been seen so far in a series search result (see
+   'record_known_publisher'). Returns [] if there aren't any yet, or if
+   they can't be loaded for any reason.
+   '''
+   contents_s = load_string(Resources.KNOWN_PUBLISHERS_FILE)
+   if not contents_s:
+      return []
+   return sorted(
+      set(line.strip() for line in contents_s.split("\n") if line.strip()),
+      key=lambda s: s.lower())
+
+
+#==============================================================================
+def record_known_publisher(publisher_s):
+   '''
+   Adds the given publisher name to the persisted cache of publisher names
+   that have been seen so far in a series search result -- used to
+   populate the "ignore publisher" combobox in the ConfigForm. Does
+   nothing if 'publisher_s' is blank, or if it's (case-insensitively)
+   already in that cache.
+   '''
+   publisher_s = (publisher_s or "").strip()
+   if not publisher_s:
+      return
+   known_sl = load_known_publishers_sl()
+   if publisher_s.lower() in [p.lower() for p in known_sl]:
+      return
+   known_sl.append(publisher_s)
+   known_sl.sort(key=lambda s: s.lower())
+   persist_string("\n".join(known_sl), Resources.KNOWN_PUBLISHERS_FILE)

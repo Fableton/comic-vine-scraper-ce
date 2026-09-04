@@ -7,15 +7,18 @@ import clr
 import log
 from cvform import CVForm 
 from System.Windows.Forms import FormBorderStyle, DockStyle
-from configuration import Configuration
+from configuration import Configuration, load_known_publishers_sl
+from utils import sstr
 import i18n
 import System
 
-clr.AddReference('System.Windows.Forms') 
-from System.Windows.Forms import AutoScaleMode, Button, CheckBox, ContextMenu, \
-    CheckedListBox, DialogResult, FlatStyle, Label, MenuItem, \
-    RichTextBox, SelectionMode, TabControl, TabPage, TextBox, LinkLabel, \
-    TableLayoutPanel
+clr.AddReference('System.Windows.Forms')
+from System.Windows.Forms import AutoScaleMode, Button, CheckBox, ComboBox, \
+    ComboBoxStyle, ContextMenu, CheckedListBox, DataGridView, \
+    DataGridViewAutoSizeColumnMode, DataGridViewButtonColumn, \
+    DataGridViewContentAlignment, DataGridViewSelectionMode, DialogResult, \
+    FlatStyle, Label, MenuItem, RichTextBox, SelectionMode, TabControl, \
+    TabPage, TextBox, LinkLabel, TableLayoutPanel
 
 clr.AddReference('System.Drawing')
 from System.Drawing import Point, Size, ContentAlignment
@@ -91,9 +94,16 @@ class ConfigForm(CVForm):
       
       # "advanced settings" textbox
       self.__advanced_tbox = None
-      
+
       # "data" checkbox list
       self.__update_checklist = None
+
+      # the "add a publisher to ignore" combobox and button (publishers tab)
+      self.__publisher_combobox = None
+      self.__publisher_add_button = None
+
+      # the table listing all currently-ignored publishers (publishers tab)
+      self.__publisher_table = None
       
       CVForm.__init__(self, owner, "configformLocation")
       self.__build_gui()
@@ -203,6 +213,7 @@ class ConfigForm(CVForm):
       tabcontrol.Controls.Add( self.__build_detailstab() )
       tabcontrol.Controls.Add( self.__build_behaviourtab() )
       tabcontrol.Controls.Add( self.__build_datatab() )
+      tabcontrol.Controls.Add( self.__build_publisherstab() )
       tabcontrol.Controls.Add( self.__build_advancedtab() )
       return tabcontrol
 
@@ -565,6 +576,139 @@ class ConfigForm(CVForm):
   
   
    # ==========================================================================
+   def __build_publisherstab(self):
+      ''' builds and returns the "Publishers" Tab for the TabControl '''
+
+      tabpage = TabPage()
+      tabpage.Text = i18n.get("ConfigFormPublishersTab")
+
+      # 1. --- a description label for this tabpage
+      label = Label()
+      label.UseMnemonic = False
+      label.AutoSize = True
+      label.Dock = DockStyle.Fill
+      label.Text = i18n.get("ConfigFormPublishersText")
+
+      # 2. --- the "pick or type a publisher" combobox; its dropdown list is
+      #    populated organically (see configuration.record_known_publisher)
+      #    from publishers actually seen in past series searches -- it is
+      #    NOT a bulk download of Comic Vine's entire publisher catalog.
+      #    the user can still type any name freehand, even if the list
+      #    is empty (e.g. nothing has been scraped yet).
+      add_button = self.__build_publisher_addbutton()
+      class PublisherComboBox(ComboBox):
+         def OnKeyPress(self, args):
+            if args.KeyChar == chr(13):
+               add_button.PerformClick()
+               args.Handled = True
+            else:
+               ComboBox.OnKeyPress(self, args)
+      cbox = PublisherComboBox()
+      cbox.DropDownStyle = ComboBoxStyle.DropDown # editable text + dropdown
+      cbox.Dock = DockStyle.Fill
+      for publisher_s in load_known_publishers_sl():
+         cbox.Items.Add(publisher_s)
+      self.__publisher_combobox = cbox
+      self.__publisher_add_button = add_button
+
+      # 3. --- the table of currently-ignored publishers
+      self.__publisher_table = self.__build_publisher_table()
+
+      # 4. --- layout: description on top, combobox+add button below it,
+      #    and the ignore-list table filling the rest
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 3
+      table_layout.ColumnCount = 2
+      table_layout.Dock = DockStyle.Fill
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, 40))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, 30))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Absolute, 90))
+
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.SetColumnSpan(label, 2)
+      table_layout.Controls.Add(cbox, 0, 1)
+      table_layout.Controls.Add(add_button, 1, 1)
+      table_layout.Controls.Add(self.__publisher_table, 0, 2)
+      table_layout.SetColumnSpan(self.__publisher_table, 2)
+
+      tabpage.Controls.Add(table_layout)
+      return tabpage
+
+
+   # ==========================================================================
+   def __build_publisher_addbutton(self):
+      ''' builds and returns the "add publisher to ignore list" button '''
+
+      button = Button()
+      button.Click += self.__fired_add_publisher
+      button.Text = i18n.get("ConfigFormPublishersAdd")
+      button.Dock = DockStyle.Fill
+      return button
+
+
+   # ==========================================================================
+   def __build_publisher_table(self):
+      ''' builds and returns the table listing all currently-ignored
+      publishers, each row with a "Remove" button. '''
+
+      table = DataGridView()
+      table.AllowUserToAddRows = False
+      table.AllowUserToResizeRows = False
+      table.RowHeadersVisible = False
+      table.ReadOnly = True
+      table.SelectionMode = DataGridViewSelectionMode.FullRowSelect
+      table.MultiSelect = False
+      table.Dock = DockStyle.Fill
+      table.ColumnCount = 2
+      table.Columns[0].Name = i18n.get("ConfigFormPublishersCol")
+      table.Columns[0].DefaultCellStyle.Alignment = \
+         DataGridViewContentAlignment.MiddleLeft
+      table.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+
+      remove_col = DataGridViewButtonColumn()
+      remove_col.Text = i18n.get("ConfigFormPublishersRemove")
+      remove_col.UseColumnTextForButtonValue = True
+      remove_col.Width = 90
+      table.Columns.RemoveAt(1)
+      table.Columns.Add(remove_col)
+
+      table.CellContentClick += self.__fired_remove_publisher
+      return table
+
+
+   # ==========================================================================
+   def __fired_add_publisher(self, sender, args):
+      ''' called when the user clicks the "add publisher" button; adds the
+      combobox's current text to the ignore-list table, unless it's blank
+      or (case-insensitively) already in that table. '''
+
+      publisher_s = self.__publisher_combobox.Text.strip()
+      if not publisher_s:
+         return
+      for row in self.__publisher_table.Rows:
+         if sstr(row.Cells[0].Value).lower() == publisher_s.lower():
+            return # already in the list -- don't add a duplicate
+      self.__publisher_table.Rows.Add(publisher_s, None)
+      self.__publisher_combobox.Text = ""
+
+
+   # ==========================================================================
+   def __fired_remove_publisher(self, sender, args):
+      ''' called when the user clicks a "Remove" button in the ignore-list
+      table; removes that row from the table. '''
+
+      if args.RowIndex >= 0 and args.ColumnIndex == 1:
+         self.__publisher_table.Rows.RemoveAt(args.RowIndex)
+
+
+   # ==========================================================================
    def __build_advancedtab(self):
       ''' builds and returns the "Advanced" Tab for the TabControl '''
       
@@ -696,7 +840,21 @@ class ConfigForm(CVForm):
       # 3. --- then get the string out of the advanced settings textbox
       config.advanced_settings_s = self.__advanced_tbox.Text
       config.api_key_s = self.__api_key_tbox.Text.strip()
-      
+
+      # 4. --- reconcile the ignored-publishers table (publishers tab)
+      #    against whatever the advanced textbox parsed out above -- the
+      #    table is authoritative for ignored publishers specifically,
+      #    while the advanced textbox remains authoritative for every
+      #    other advanced setting it may also contain.
+      table_publishers_sl = [sstr(row.Cells[0].Value)
+         for row in self.__publisher_table.Rows]
+      table_publishers_lower_sl = [p.lower() for p in table_publishers_sl]
+      for publisher_s in config.ignored_publishers_sl:
+         if publisher_s.lower() not in table_publishers_lower_sl:
+            config.remove_ignored_publisher(publisher_s)
+      for publisher_s in table_publishers_sl:
+         config.add_ignored_publisher(publisher_s)
+
       return config
  
  
@@ -751,7 +909,12 @@ class ConfigForm(CVForm):
       # 3. --- finally, set the contents in the textboxes
       self.__advanced_tbox.Text = config.advanced_settings_s
       self.__api_key_tbox.Text = config.api_key_s.strip()
-      
+
+      # 4. --- populate the ignored-publishers table (publishers tab)
+      self.__publisher_table.Rows.Clear()
+      for publisher_s in config.get_ignored_publishers_display_sl():
+         self.__publisher_table.Rows.Add(publisher_s, None)
+
       self.__fired_update_gui()
       
       
