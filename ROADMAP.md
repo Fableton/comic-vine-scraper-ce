@@ -1,23 +1,22 @@
 # Roadmap
 
-## Pendientes conocidos
+## Known pending items
 
-- [ ] **Regresar al comic anterior desde la ventana de búsqueda de serie**:
-  agregar la opción de volver al comic anterior (navegación hacia atrás)
-  también desde la ventana de búsqueda de serie (`searchform.py`). Esta
-  funcionalidad ya existe en la ventana de detalle de serie (`seriesform.py`);
-  falta replicarla en la de búsqueda.
+- [x] **Go back to the previous comic from the series-selection window**:
+  the "Previous Comic" button now exists in both the issue-selection
+  window (`issueform.py`) and the series-selection window
+  (`seriesform.py`). Done, see CHANGELOG.md [1.1.0-ce].
 
-- [ ] **Ignorar Publishers desde las opciones**: agregar a la configuración
-  del scraper (`configform.py` / `configuration.py`) la capacidad de marcar
-  Publishers para ignorar, de forma que sea más fácil excluir editoriales de
-  las que se sabe que no se tienen comics. Incluye:
-  - Guardar en caché una lista de Publishers (para poblar el selector de
-    cuáles ignorar) — no depender de pedirla de nuevo a la API cada vez.
-  - En la lista de series (donde aparece el Publisher de cada resultado),
-    filtrar/ocultar automáticamente las series cuyo Publisher esté en la
-    lista de ignorados.
-  - Agregar un menú contextual (clic derecho) sobre una serie/resultado en
-    esa lista con la opción **"Ignorar Publisher"**, que agregue ese
-    Publisher a la configuración de ignorados directamente desde ahí (sin
-    tener que ir a las opciones manualmente).
+- [ ] **Ignore Publishers from the options**: add the ability to mark
+  Publishers to ignore to the scraper's configuration
+  (`configform.py` / `configuration.py`), making it easier to exclude
+  publishers known to have no comics in the library. Includes:
+  - Cache a list of Publishers on disk (to populate the selector of
+    which ones to ignore) -- avoid re-requesting it from the API every
+    time.
+  - In the series list (wherever a result's Publisher is shown),
+    automatically filter/hide series whose Publisher is on the ignore
+    list.
+  - Add a right-click context menu on a series/result in that list with
+    an **"Ignore Publisher"** option, adding that Publisher to the
+    ignore-list configuration directly from there.

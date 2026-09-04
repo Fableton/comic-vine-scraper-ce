@@ -1,49 +1,45 @@
 # Changelog
 
-Resumen funcional de los cambios de este fork (comic-vine-scraper-ce),
-a partir de donde diverge de
+Functional summary of the changes in this fork (comic-vine-scraper-ce),
+starting from where it diverges from upstream
 [cbanack/comic-vine-scraper](https://github.com/cbanack/comic-vine-scraper)
 v1.0.102.
 
 ## [1.1.0-ce] - Unreleased
 
-- Se agregó un botón "Previous Comic" en la ventana de selección de serie,
-  igual al que ya existía en la de selección de issue, para poder
-  regresar y re-hacer el comic anterior si se eligió la serie equivocada.
-- Se corrigió que el diálogo de error genérico no se mostrara cuando
-  ocurría un error inesperado (no relacionado a la base de datos) durante
-  el scraping o al abrir la configuración -- antes fallaba en silencio,
-  sin avisar al usuario.
-- Se corrigió que el botón "Configurar..." del plugin no hiciera nada:
-  ComicRack estaba cargando por error una copia sin construir del script
-  (desde el submódulo fuente); ahora solo carga la copia empaquetada real.
-- Se agregó un `ROADMAP.md` para llevar seguimiento de los pendientes
-  conocidos de este fork.
+- Added a "Previous Comic" button to the series-selection window,
+  matching the one already in the issue-selection window, so you can go
+  back and redo the previous comic if you picked the wrong series for it.
+- Fixed the generic error dialog not showing up when an unexpected,
+  non-database error happened while scraping or opening the
+  configuration -- it used to fail silently, without telling the user.
+- Fixed the "Configure..." toolbar button doing nothing: ComicRack was
+  mistakenly loading an unbuilt copy of the script (from the source
+  submodule); now only the real, packaged copy gets loaded.
+- Added a `ROADMAP.md` to track this fork's known pending features.
 
 ## [1.0.102-ce2] - 2026-09-01
 
-- Se restauraron personalizaciones visuales (layouts responsive con
-  TableLayoutPanel) en varias ventanas que se habían perdido al crear
-  el submódulo.
-- Se agregó un botón "Search" junto al campo de número de issue a
-  previsualizar, y se mejoró el espaciado entre los filtros y las tablas
-  en las ventanas de selección de serie/issue.
-- Se automatizó la generación de releases (GitHub Actions) al crear un
-  tag, sin depender de tener Ant/ipy.exe instalados localmente.
+- Restored visual customizations (responsive TableLayoutPanel layouts)
+  in several windows that had been lost when the submodule was created.
+- Added a "Search" button next to the issue-number preview field, and
+  improved the spacing between the filters and the tables in the
+  series/issue selection windows.
+- Automated building releases (GitHub Actions) on tag push, without
+  needing Ant/ipy.exe installed locally.
 
 ## [1.0.102-ce1] - 2026-09-01
 
-- Se agregó búsqueda y filtros (por Serie/Año/Issues/Publisher) con
-  ordenamiento multi-columna en la tabla de selección de series, y
-  filtros equivalentes (con columnas Año/Mes) en la de selección de
-  issues.
-- Se ajustaron los elementos estáticos de los formularios de selección
-  de serie e issue para que el layout sea responsive y se adapte a
-  resoluciones mayores (antes tenían tamaño y posición fijos).
-- Se agregó un campo editable para forzar el número de issue a buscar,
-  un combobox con historial de las últimas 20 búsquedas, cache en disco
-  (24h) para la lista de issues de una serie, y un botón "Previous
-  Comic" en la ventana de selección de issue.
-- Se corrigió Ctrl+Backspace en los nuevos campos de filtro/combobox.
-- Se documentaron los cambios de este fork en el README, y se agregó un
-  script de build en PowerShell que no depende de Ant/ipy.exe.
+- Added search and filters (by Series/Year/Issues/Publisher) with
+  multi-column sorting to the series-selection table, and matching
+  filters (with Year/Month columns) to the issue-selection table.
+- Adjusted the static layout of the series and issue selection forms so
+  they're responsive and adapt to larger resolutions (they used to have
+  fixed size/position).
+- Added an editable field to force the issue number to search for, a
+  combobox that remembers the last 20 searches, a 24h disk cache for a
+  series' issue list, and a "Previous Comic" button in the
+  issue-selection window.
+- Fixed Ctrl+Backspace in the new filter/combobox fields.
+- Documented this fork's changes in the README, and added a PowerShell
+  build script that doesn't depend on Ant/ipy.exe.
