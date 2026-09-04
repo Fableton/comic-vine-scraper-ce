@@ -7,16 +7,11 @@
   window (`issueform.py`) and the series-selection window
   (`seriesform.py`). Done, see CHANGELOG.md [1.1.0-ce].
 
-- [ ] **Ignore Publishers from the options**: add the ability to mark
-  Publishers to ignore to the scraper's configuration
-  (`configform.py` / `configuration.py`), making it easier to exclude
-  publishers known to have no comics in the library. Includes:
-  - Cache a list of Publishers on disk (to populate the selector of
-    which ones to ignore) -- avoid re-requesting it from the API every
-    time.
-  - In the series list (wherever a result's Publisher is shown),
-    automatically filter/hide series whose Publisher is on the ignore
-    list.
-  - Add a right-click context menu on a series/result in that list with
-    an **"Ignore Publisher"** option, adding that Publisher to the
-    ignore-list configuration directly from there.
+- [x] **Ignore Publishers from the options**: a new ConfigForm "Publishers"
+  tab lets you build an ignore list (editable combobox + "Add" button,
+  table with a "Remove" button per row); the combobox is populated
+  organically from publishers seen in past series searches, not a bulk
+  Comic Vine API fetch. The series-selection window also filters out
+  ignored publishers automatically, and its right-click menu offers
+  "Ignore Publisher" (persistent) and "Ignore Publisher for this session
+  only". Done, see CHANGELOG.md [1.1.0-ce].

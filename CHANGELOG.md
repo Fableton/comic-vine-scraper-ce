@@ -17,6 +17,14 @@ v1.0.102.
   mistakenly loading an unbuilt copy of the script (from the source
   submodule); now only the real, packaged copy gets loaded.
 - Added a `ROADMAP.md` to track this fork's known pending features.
+- Added a "Publishers" tab to the configuration dialog to build a list
+  of publishers to ignore: pick or type a name into a combobox (which
+  fills in on its own from publishers you've already come across while
+  scraping, without any extra download), add it with a button, and
+  remove entries from a table. The series-selection window now filters
+  those publishers out of its results automatically, and its right-click
+  menu also offers to ignore a publisher on the spot -- either for good,
+  or just for the current batch of comics you're scraping.
 
 ## [1.0.102-ce2] - 2026-09-01
 
