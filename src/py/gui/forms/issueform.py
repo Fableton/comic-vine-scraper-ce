@@ -13,6 +13,7 @@ from utils import sstr
 from buttondgv import ButtonDataGridView
 from issuecoverpanel import IssueCoverPanel
 from cvform import CVForm
+import guistyle
 
 clr.AddReference('Microsoft.VisualBasic')
 from System.ComponentModel import ListSortDirection
@@ -107,14 +108,21 @@ class IssueForm(CVForm):
       
       if len(issue_refs) <= 0:
          raise Exception("do not invoke the IssueForm with no IssueRefs!")
-      CVForm.__init__(self, scraper.comicrack.MainWindow, "issueformLocation")
+      CVForm.__init__(self, scraper.comicrack.MainWindow,
+         "issueformLocation", "issueformSize")
       self.__build_gui(issue_ref_hint, series_ref)
       scraper.cancel_listeners.append(self.Close)
       
    # ==========================================================================
    def __build_gui(self, issue_ref_hint, series_ref):
       ''' Constructs and initializes the gui for this form. '''
-      
+
+      # scale the form's font FIRST, before building any sub-components --
+      # several of them (e.g. the filters panel) size themselves against
+      # self.Font, so it must already reflect the current UI scale.
+      self.AutoScaleMode = AutoScaleMode.Font
+      self.Font = guistyle.scaled_font(self.Font, self.__config.ui_scale_n)
+
       # 1. --- build each gui component
       self.__ok_button = self.__build_okbutton()
       self.__skip_button = self.__build_skipbutton()
@@ -127,10 +135,9 @@ class IssueForm(CVForm):
       self.__coverpanel = self.__build_coverpanel()
 
       # 2. --- configure this form, and add all the gui components to it
-      self.AutoScaleMode = AutoScaleMode.Font
       self.ClientSize = Size(950, 560)
+      self.MinimumSize = Size(650, 400)
       self.Text = i18n.get("IssueFormTitle")
-      self.FormBorderStyle = FormBorderStyle.Sizable  # permitir redimensionar
       self.FormClosed += self.__form_closed_fired
       self.KeyPreview = True;
       self.KeyDown += self.__key_was_pressed
@@ -148,19 +155,38 @@ class IssueForm(CVForm):
          main_layout.ColumnCount = 1
          main_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100))
       main_layout.RowCount = 3
-      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64))
+      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.header_row_height(self.Font)))
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
-      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64))
+      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.button_row_height(self.Font)))
       main_layout.Dock = DockStyle.Fill
 
       # Buttons sublayout
       buttons_layout = TableLayoutPanel()
-      buttons_layout.ColumnCount = 4
+      buttons_layout.ColumnCount = 5
       buttons_layout.RowCount = 1
-      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25))
-      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25))
-      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25))
-      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 25))
+      # without an explicit RowStyle, this row defaults to AutoSize (fits
+      # the buttons' own natural height) instead of filling the scaled
+      # height given to it by the outer row -- force it to fill instead.
+      buttons_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      # each button's column is measured directly from its own text at
+      # the current font -- SizeType.AutoSize columns combined with a
+      # Dock=Fill button can under-measure the needed width and let the
+      # text silently wrap onto a second, invisible line (the row only
+      # ever reserves room for one), so we bypass AutoSize entirely here.
+      for btn in (self.__ok_button, self.__skip_button, back_button,
+            previous_button):
+         buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+            System.Windows.Forms.SizeType.Absolute,
+            guistyle.button_column_width(btn.Text, self.Font)))
+      # trailing spacer column absorbs any leftover width, so the actual
+      # button columns stay at their measured (not stretched) size.
+      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
       buttons_layout.Dock = DockStyle.Fill
       self.__ok_button.Dock = DockStyle.Fill
       self.__skip_button.Dock = DockStyle.Fill
@@ -224,9 +250,7 @@ class IssueForm(CVForm):
       table.DefaultCellStyle.NullValue = "--"
       table.Dock = DockStyle.Fill
       # Ajuste de altura encabezados para alta resolucion
-      table.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.EnableResizing
-      if table.ColumnHeadersHeight < 38:
-         table.ColumnHeadersHeight = 42
+      table.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize
       
       # 2. --- build columns
       table.ColumnCount = 6
@@ -318,9 +342,9 @@ class IssueForm(CVForm):
       container = Panel()
       container.Dock = DockStyle.Fill
       filter_panel = Panel()
-      # extra height (vs. the 24px the textboxes need) leaves a gap below
+      # extra height (vs. the textboxes' own height) leaves a gap below
       # them so the filter row doesn't look glued to the table underneath
-      filter_panel.Height = 38
+      filter_panel.Height = guistyle.filter_row_height(self.Font)
       filter_panel.Dock = DockStyle.Top
       filter_panel.BackColor = table.BackColor
 
@@ -349,7 +373,6 @@ class IssueForm(CVForm):
       default_widths_n = [85, 245, 75, 75]
       for idx, tb in enumerate(self.__filter_textboxes):
          tb.Top = 4
-         tb.Height = 20
          tb.Left = default_lefts_n[idx]
          tb.Width = default_widths_n[idx]
          tb.TextChanged += self.__filters_changed

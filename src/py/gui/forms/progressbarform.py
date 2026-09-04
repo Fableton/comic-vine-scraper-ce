@@ -6,11 +6,14 @@ This module contains the ProgressBarForm class.
 
 import clr
 from cvform import CVForm
+import guistyle
 
 clr.AddReference('IronPython')
 clr.AddReference('System.Windows.Forms')
+clr.AddReference('System.Drawing')
 
-from System.Windows.Forms import ProgressBar
+from System.Windows.Forms import DockStyle, ProgressBar
+from System.Drawing import Size
 
 # =============================================================================
 class ProgressBarForm(CVForm): 
@@ -32,17 +35,21 @@ class ProgressBarForm(CVForm):
       this Form manually.
       '''
       
-      CVForm.__init__(self, owner, "pbformLocation")
-      
+      CVForm.__init__(self, owner, "pbformLocation", "pbformSize")
+
+      scale_n = scrape_engine.config.ui_scale_n
+      self.Font = guistyle.scaled_font(self.Font, scale_n)
+
       pb = ProgressBar()
       pb.Minimum = 0
       pb.Maximum = 1
       pb.Step = 1
       pb.Value = 0
+      pb.Dock = DockStyle.Fill
 
-      self.Height = 45
+      self.Height = guistyle.scale(45, scale_n)
       self.Width = 400
-      pb.Width = 400
+      self.MinimumSize = Size(200, 40)
       self.Controls.Add(pb)
       
       self.pb = pb

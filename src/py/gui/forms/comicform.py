@@ -11,10 +11,12 @@ from utils import sstr
 import i18n
 from resources import Resources
 from cvform import CVForm
+import guistyle
 
 clr.AddReference('IronPython')
 
 clr.AddReference('System')
+import System
 from System import GC, Array
 from System.IO import Path
 
@@ -27,8 +29,9 @@ from System.Threading import Monitor, Thread, ThreadStart, \
 
 clr.AddReference('System.Windows.Forms')
 from System.Windows.Forms import AnchorStyles, Application, AutoScaleMode, \
-   Button, Cursors, FormBorderStyle, Label, MouseButtons, PaintEventHandler, \
-   Panel, PictureBox, PictureBoxSizeMode, ProgressBar
+   Button, Cursors, DockStyle, FormBorderStyle, Label, MouseButtons, \
+   PaintEventHandler, Panel, PictureBox, PictureBoxSizeMode, ProgressBar, \
+   TableLayoutPanel
 
 # =============================================================================
 class ComicForm(CVForm):
@@ -78,99 +81,113 @@ class ComicForm(CVForm):
       self.__build_gui()
    
    
-   # ==========================================================================          
+   # ==========================================================================
    def __build_gui(self):
       ''' Constructs and initializes the gui for this form. '''
-      
+
+      scale_n = self.__scraper.config.ui_scale_n
+      self.AutoScaleMode = AutoScaleMode.Font
+      self.Font = guistyle.scaled_font(self.Font, scale_n)
+
       # 1. --- build each gui component
       self.__progbar = self.__build_progbar()
       self.__label = self.__build_label()
       self.__pbox_panel = self.__build_pboxpanel()
       self.__cancel_button = self.__build_cancelbutton()
-         
+
       # 2. -- configure this form, and add all the gui components to it
-      self.Text = self.Text = Resources.SCRIPT_FULLNAME
-      self.AutoScaleMode = AutoScaleMode.Font
-      self.ClientSize = Size(346, 604)  
+      self.Text = Resources.SCRIPT_FULLNAME
+      self.ClientSize = Size(346, 604)
       self.MinimumSize = Size(166,275)
-      self.FormBorderStyle = FormBorderStyle.Sizable
       self.Icon = None
-   
-      self.Controls.Add(self.__progbar)
-      self.Controls.Add(self.__label)
-      self.Controls.Add(self.__pbox_panel)
-      self.Controls.Add(self.__cancel_button)
-      
+
+      # responsive layout using a docked TableLayoutPanel, matching every
+      # other form in this plugin, instead of Anchor-based positioning.
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 4
+      table_layout.ColumnCount = 1
+      table_layout.Dock = DockStyle.Fill
+      table_layout.Padding = System.Windows.Forms.Padding(13, 15, 13, 13)
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.control_row_height(self.Font)))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.label_row_height(self.Font)))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.button_row_height(self.Font)))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+
+      table_layout.Controls.Add(self.__progbar, 0, 0)
+      table_layout.Controls.Add(self.__label, 0, 1)
+      table_layout.Controls.Add(self.__pbox_panel, 0, 2)
+      table_layout.Controls.Add(self.__cancel_button, 0, 3)
+      self.Controls.Add(table_layout)
+
       # 3. -- set up some listeners
       self.__scraper.start_scrape_listeners.append(self.__start_scrape)
       self.__scraper.cancel_listeners.append(self.close_threadsafe)
       self.FormClosing += self.__form_closing_fired
       self.FormClosed += self.__form_closed_fired
-      
-      # 4. -- define the keyboard focus tab traversal ordering
-      self.__cancel_button.TabIndex = 0                                        
 
-      
+      # 4. -- define the keyboard focus tab traversal ordering
+      self.__cancel_button.TabIndex = 0
+
+
    # ==========================================================================
    def __build_progbar(self):
       ''' Builds and returns the progress bar for this form. '''
-      
+
       pb = ProgressBar()
       pb.Minimum = 0
       pb.Maximum = 0
       pb.Step = 1
       pb.Value = 0
-      pb.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
-      pb.Width = 320
-      pb.Height = 20
-      pb.Location = Point(13, 15)
+      pb.Dock = DockStyle.Fill
       return pb
-   
-   
+
+
    # ==========================================================================
    def __build_label(self):
       ''' Builds and returns the label for this form. '''
-      
+
       label = Label()
       label.UseMnemonic = False
       label.Text = '' # updated everytime we start scraping a new comic
-      label.Location = Point(13, 45)
-      label.Size = Size(320, 30)
-      label.Anchor = AnchorStyles.Top | AnchorStyles.Left |AnchorStyles.Right
       label.AutoSize = False
+      label.Dock = DockStyle.Fill
       return label
-   
-   
+
+
    # ==========================================================================
    def __build_pboxpanel(self):
       ''' Builds and returns the picturebox panel for this form. '''
-      
-      pbox = _PictureBoxPanel()
-      pbox.Location = Point (13, 65)
-      pbox.Size = Size(320, 496)
-      pbox.Anchor = AnchorStyles.Top | \
-         AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
-       
-      # register listeners on the panel  
+
+      pbox = _PictureBoxPanel(self)
+      pbox.Dock = DockStyle.Fill
+
+      # register listeners on the panel
       pbox.MouseClick += self.__picture_box_clicked
       pbox.MouseDoubleClick += self.__picture_box_clicked
-      
+
       return pbox
-   
-   
+
+
    # ==========================================================================
    def __build_cancelbutton(self):
       ''' Builds and returns the cancel button for this form. '''
-      
+
       button = Button()
       button.Text=""  # gets updated by the 'update' method
       def cancel(sender, args):
          button.Enabled = False
          self.Close()
       button.Click+=cancel
-      button.Location = Point(78, 572)
-      button.Size = Size(250, 46)
-      button.Anchor = AnchorStyles.Bottom
+      button.Dock = DockStyle.Fill
       return button
    
    
@@ -387,9 +404,18 @@ class _PictureBoxPanel(Panel):
    '''    
    
    #===========================================================================
-   def __init__(self):
-      ''' Creates a _PictureBoxPanel.  Call set_image after initialization. '''
-      
+   def __init__(self, comicform):
+      '''
+      Creates a _PictureBoxPanel.  Call set_image after initialization.
+      'comicform' -> the owning ComicForm, used to ask whether the
+         currently displayed page can be turned forward/backward. Stored
+         directly (rather than relying on self.Parent) since this panel
+         may be nested inside intermediate layout containers (e.g. a
+         TableLayoutPanel), not added directly to the ComicForm itself.
+      '''
+
+      self.__comicform = comicform
+
       # the left and right arrow Image objects
       self.__left_arrow = Resources.createArrowIcon(True, False)
       self.__full_left_arrow = Resources.createArrowIcon(True, True)
@@ -475,10 +501,9 @@ class _PictureBoxPanel(Panel):
       self.OnResize(None)
       
       # update our mouse cursor
-      comicform = self.Parent
-      if comicform != None:
-         self.Cursor = Cursors.Hand if comicform._can_change_page(True) or \
-           comicform._can_change_page(False) else None
+      if self.__comicform != None:
+         self.Cursor = Cursors.Hand if self.__comicform._can_change_page(True) or \
+           self.__comicform._can_change_page(False) else None
 
    
    
@@ -600,15 +625,15 @@ class _PictureBoxPanel(Panel):
       self.__left_bound = leftx
       self.__right_bound = f_rightx
       
-      if self.Parent != None:
-         
+      if self.__comicform != None:
+
          # 5. paint each arrow if it is possible to "turn the page" in that
          #    direction.   alpha-blend the inactive arrow (the one on the half
          #    of the pbox that the mouse ISN'T hovering over.)
          g = args.Graphics
          mouse_hovered = self.__mouse_hovered_state
-         can_go_left = self.Parent._can_change_page(False)
-         can_go_right = self.Parent._can_change_page(True)
+         can_go_left = self.__comicform._can_change_page(False)
+         can_go_right = self.__comicform._can_change_page(True)
          
          # 5a. draw the full left and left arrows if they are active
          if mouse_hovered and can_go_left:

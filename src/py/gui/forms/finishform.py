@@ -7,13 +7,16 @@ This module is home to the FinishForm class.
 import clr
 import i18n
 from resources import Resources
-from cvform import CVForm 
+from cvform import CVForm
+import guistyle
+import System
 
 clr.AddReference('System.Windows.Forms')
-from System.Windows.Forms import AutoScaleMode, Button, DialogResult, Label
+from System.Windows.Forms import AutoScaleMode, Button, DialogResult, \
+   DockStyle, Label, TableLayoutPanel
 
 clr.AddReference('System.Drawing')
-from System.Drawing import ContentAlignment, Point, Size
+from System.Drawing import ContentAlignment, Size
 
 # =============================================================================
 class FinishForm(CVForm):
@@ -33,10 +36,12 @@ class FinishForm(CVForm):
                  skipped (both reported to the user by this form)
       '''
       
-      CVForm.__init__(self, scraper.comicrack.MainWindow, "finishformLocation")
+      self.__config = scraper.config
+      CVForm.__init__(self, scraper.comicrack.MainWindow,
+         "finishformLocation", "finishformSize")
       self.__build_gui( status[0], status[1] )
 
-      
+
    # ==========================================================================
    def __build_gui(self, scraped_n, skipped_n):
       '''
@@ -44,66 +49,90 @@ class FinishForm(CVForm):
       'scraped_n' -> the number of books that were scraped (reported to user)
       'skipped_n' -> the number of books that were skipped (reported to user)
       '''
-      
+
+      self.AutoScaleMode = AutoScaleMode.Font
+      self.Font = guistyle.scaled_font(self.Font, self.__config.ui_scale_n)
+
       # 1. --- build each gui component
       scrape_label = self.__build_scrape_label(scraped_n)
       skip_label = self.__build_skip_label(skipped_n)
       ok = self.__build_okbutton()
-   
+
       # 2. --- configure this form, and add all the gui components to it
       self.AcceptButton = ok
-      self.AutoScaleMode = AutoScaleMode.Font
       self.Text = i18n.get("FinishFormTitle").format(Resources.SCRIPT_VERSION)
       self.ClientSize = Size(300, 150)
-   
-      self.Controls.Add(scrape_label)
-      self.Controls.Add(skip_label)
-      self.Controls.Add(ok)
-      
+      self.MinimumSize = Size(280, 140)
+
+      # responsive layout using a docked TableLayoutPanel, matching every
+      # other form in this plugin.
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 4
+      table_layout.ColumnCount = 1
+      table_layout.Dock = DockStyle.Fill
+      table_layout.Padding = System.Windows.Forms.Padding(10)
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.label_row_height(self.Font)))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.label_row_height(self.Font)))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100)) # spacer, absorbs resize
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.button_row_height(self.Font)))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+
+      table_layout.Controls.Add(scrape_label, 0, 0)
+      table_layout.Controls.Add(skip_label, 0, 1)
+      table_layout.Controls.Add(ok, 0, 3)
+      self.Controls.Add(table_layout)
+
       # 3. --- define the keyboard focus tab traversal ordering
       ok.TabIndex = 0
-      
+
    # ==========================================================================
    def __build_scrape_label(self, scraped_n):
-      ''' 
+      '''
       Builds and returns the 'number scraped' Label for this form.
-      'scraped_n' -> the number of books that were scraped. 
+      'scraped_n' -> the number of books that were scraped.
       '''
 
       label = Label()
       label.UseMnemonic = False
-      label.Location = Point(10, 10)
-      label.Size = Size(280, 26)
+      label.AutoSize = False
+      label.Dock = DockStyle.Fill
       label.TextAlign = ContentAlignment.MiddleCenter
       label.Text = i18n.get("FinishFormScrapedSingle") if scraped_n==1 else \
-         i18n.get("FinishFormScrapedPlural").format(scraped_n) 
+         i18n.get("FinishFormScrapedPlural").format(scraped_n)
       return label
 
-   
+
    # ==========================================================================
    def __build_skip_label(self, skipped_n):
-      ''' 
+      '''
       Builds and returns the 'number skipped' Label for this form.
-      'skipped_n' -> the number of books that were skipped. 
+      'skipped_n' -> the number of books that were skipped.
       '''
 
       label = Label()
       label.UseMnemonic = False
-      label.Location = Point(10, 40) 
-      label.Size = Size(280, 26)
+      label.AutoSize = False
+      label.Dock = DockStyle.Fill
       label.TextAlign = ContentAlignment.MiddleCenter
       label.Text = i18n.get("FinishFormSkippedSingle") if skipped_n==1 else \
          i18n.get("FinishFormSkippedPlural").format(skipped_n)
       return label
-   
+
    # ==========================================================================
    def __build_okbutton(self):
       ''' Builds and returns the ok button for this form. '''
 
       button = Button()
       button.DialogResult = DialogResult.OK
-      button.Location = Point(105, 68)
-      button.Size = Size(90, 46)
+      button.Dock = DockStyle.Fill
       button.Text = i18n.get("MessageBoxOk")
       button.UseVisualStyleBackColor = True
       return button

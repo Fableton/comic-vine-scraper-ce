@@ -35,8 +35,10 @@ class CVForm(PersistentForm):
       self.MaximizeBox = False                                                
       self.MinimizeBox = False                                                
       self.ShowIcon = False                                                   
-      self.ShowInTaskbar = False    
-      self.FormBorderStyle = FormBorderStyle.FixedSingle
+      self.ShowInTaskbar = False
+      # every CVForm is resizable by default, for a consistent feel across
+      # the whole plugin -- individual forms should NOT override this.
+      self.FormBorderStyle = FormBorderStyle.Sizable
       
       
    #===========================================================================

@@ -9,6 +9,7 @@ import i18n
 from cvform import CVForm
 from resources import Resources
 import utils
+import guistyle
 
 clr.AddReference('System.Windows.Forms')
 from System.Windows.Forms import AutoScaleMode, Button, \
@@ -62,8 +63,10 @@ class SearchForm(CVForm):
       # the (editable) search combobox for this form
       self.__combobox = None
 
+      self.__config = scraper.config
 
-      CVForm.__init__(self, scraper.comicrack.MainWindow, "searchformLocation")
+      CVForm.__init__(self, scraper.comicrack.MainWindow,
+         "searchformLocation", "searchformSize")
       scraper.cancel_listeners.append(self.Close)
       self.__build_gui(initial_search_s, failed_search_s)
       
@@ -83,11 +86,13 @@ class SearchForm(CVForm):
          self.__search_button, self.__cancel_button)
 
       # configure this form, and add all gui components to it
+      scale_n = self.__config.ui_scale_n
       self.AutoScaleMode = AutoScaleMode.Font
+      self.Font = guistyle.scaled_font(self.Font, scale_n)
       self.ClientSize = Size(450, 280 if self.__fail_label_is_visible else 170)
+      self.MinimumSize = Size(350, 180)
       self.Text = i18n.get("SeriesSearchFailedTitle") \
          if self.__fail_label_is_visible else i18n.get("SearchFormTitle")
-      self.FormBorderStyle = FormBorderStyle.Sizable # permitir redimensionar
       self.KeyDown += self.__key_was_pressed
       self.KeyUp += self.__key_was_released
       self.__combobox.KeyDown += self.__key_was_pressed
@@ -104,29 +109,42 @@ class SearchForm(CVForm):
       main_layout.RowCount = 5
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
          System.Windows.Forms.SizeType.Absolute,
-         100 if self.__fail_label_is_visible else 0))
+         guistyle.scale(100, scale_n) if self.__fail_label_is_visible else 0))
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
-         System.Windows.Forms.SizeType.Absolute, 26))
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.label_row_height(self.Font)))
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
-         System.Windows.Forms.SizeType.Absolute, 36)) # taller: bigger combo font
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.control_row_height(self.__combobox.Font))) # bigger combo font
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
          System.Windows.Forms.SizeType.Percent, 100)) # spacer, absorbs resize
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
-         System.Windows.Forms.SizeType.Absolute, 55)) # taller button row
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.button_row_height(self.Font)))
       main_layout.Dock = DockStyle.Fill
       main_layout.Padding = System.Windows.Forms.Padding(10)
 
-      # buttons sublayout, so the 3 buttons always evenly divide the
-      # available width instead of looking cramped together
+      # buttons sublayout; each button's column is measured directly from
+      # its own text at the current font -- SizeType.AutoSize columns
+      # combined with a Dock=Fill button can under-measure the needed
+      # width and let the text silently wrap onto a second, invisible
+      # line (the row only ever reserves room for one).
       buttons_layout = TableLayoutPanel()
-      buttons_layout.ColumnCount = 3
+      buttons_layout.ColumnCount = 4
       buttons_layout.RowCount = 1
+      # without an explicit RowStyle, this row defaults to AutoSize (fits
+      # the buttons' own natural height) instead of filling the scaled
+      # height given to it by the outer row -- force it to fill instead.
+      buttons_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      for btn in (self.__search_button, self.__skip_button, self.__cancel_button):
+         buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+            System.Windows.Forms.SizeType.Absolute,
+            guistyle.button_column_width(btn.Text, self.Font)))
+      # trailing spacer column absorbs any leftover width, so the actual
+      # button columns stay at their measured (not stretched) size.
       buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
-         System.Windows.Forms.SizeType.Percent, 33.33))
-      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
-         System.Windows.Forms.SizeType.Percent, 33.33))
-      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
-         System.Windows.Forms.SizeType.Percent, 33.34))
+         System.Windows.Forms.SizeType.Percent, 100))
       buttons_layout.Dock = DockStyle.Fill
       self.__search_button.Dock = DockStyle.Fill
       self.__skip_button.Dock = DockStyle.Fill
@@ -242,7 +260,8 @@ class SearchForm(CVForm):
       cbox = SearchComboBox()
       cbox.DropDownStyle = ComboBoxStyle.DropDown # editable text + dropdown
       cbox.Dock = DockStyle.Fill
-      cbox.Font = Font(cbox.Font.FontFamily, 12.0, cbox.Font.Style)
+      cbox.Font = Font(cbox.Font.FontFamily,
+         12.0 * self.__config.ui_scale_n, cbox.Font.Style)
       for term_s in self.__load_search_history():
          cbox.Items.Add(term_s)
       if initial_text_s:

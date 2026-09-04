@@ -25,6 +25,15 @@ v1.0.102.
   those publishers out of its results automatically, and its right-click
   menu also offers to ignore a publisher on the spot -- either for good,
   or just for the current batch of comics you're scraping.
+- Unified the look of every dialog in this plugin: consistent button and
+  row heights, every window is now resizable and remembers the size you
+  leave it at (before, only the main scraping-progress window did), and
+  every window that still used a fixed, non-resizable layout (the
+  scraping-progress, "finished scraping", and search-progress windows)
+  now uses the same responsive layout as the rest.
+- Added an "Appearance" tab to the configuration dialog with a slider to
+  scale the size of buttons, rows, and text across every window in this
+  plugin at once (75%-150%), with a live preview as you drag it.
 
 ## [1.0.102-ce2] - 2026-09-01
 

@@ -54,7 +54,16 @@ class Configuration(object):
    __RESCRAPE_NOTES = 'updateNotes'
    __RESCRAPE_TAGS = 'updateTags'
    __SUMMARY_DIALOG = 'summaryDialog'
-   
+   __UI_SCALE = 'uiScale'
+
+   # the allowed range (and step) for the UI scale factor -- a multiplier
+   # applied to shared button/row heights and fonts across all GUI forms
+   # (see gui.guistyle); exposed as a slider on ConfigForm's Appearance tab.
+   MIN_UI_SCALE_N = 0.75
+   MAX_UI_SCALE_N = 1.50
+   UI_SCALE_STEP_N = 0.05
+   __DEFAULT_UI_SCALE = 1.0
+
    # default values for advanced settings
    __DEFAULT_IGNORED_BEFORE_YEAR = 0
    __DEFAULT_IGNORED_AFTER_YEAR = 9999999
@@ -86,6 +95,7 @@ class Configuration(object):
       self.rescrape_notes_b = True # store prev scrape choice in notes field
       self.rescrape_tags_b = False # store prev scrape choice in tags field
       self.summary_dialog_b = True # show summary dialog after scrape finishes
+      self.ui_scale_n = Configuration.__DEFAULT_UI_SCALE # gui size multiplier
 
       self.update_series_b = True # scrape comic's series metadata
       self.update_number_b = True # scrape comic's issue number metadata
@@ -544,8 +554,16 @@ class Configuration(object):
          
       if Configuration.__SUMMARY_DIALOG in loaded:
          self.summary_dialog_b = loaded[Configuration.__SUMMARY_DIALOG]
-      
-      # grab the contents of the advanced settings file, too   
+
+      if Configuration.__UI_SCALE in loaded:
+         try:
+            scale_n = float(loaded[Configuration.__UI_SCALE])
+            self.ui_scale_n = max(Configuration.MIN_UI_SCALE_N,
+               min(Configuration.MAX_UI_SCALE_N, scale_n))
+         except (TypeError, ValueError):
+            pass # corrupt value -- just keep the default
+
+      # grab the contents of the advanced settings file, too
       if File.Exists(Resources.ADVANCED_FILE): 
          self.advanced_settings_s = load_string(Resources.ADVANCED_FILE)
          
@@ -592,7 +610,8 @@ class Configuration(object):
       defaults[Configuration.__RESCRAPE_NOTES] = self.rescrape_notes_b
       defaults[Configuration.__RESCRAPE_TAGS] = self.rescrape_tags_b
       defaults[Configuration.__SUMMARY_DIALOG] = self.summary_dialog_b
-   
+      defaults[Configuration.__UI_SCALE] = self.ui_scale_n
+
       persist_map(defaults, Resources.SETTINGS_FILE)
       persist_string(self.advanced_settings_s, Resources.ADVANCED_FILE)
    

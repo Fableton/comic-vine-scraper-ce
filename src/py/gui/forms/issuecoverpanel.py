@@ -11,13 +11,14 @@ from scheduler import Scheduler
 import utils
 from utils import sstr
 import db
+import guistyle
 import i18n
 
 clr.AddReference('System.Drawing')
 from System.Drawing import ContentAlignment, Font, FontStyle, Point, Size
 
 clr.AddReference('System.Windows.Forms')
-from System.Windows.Forms import Button, Panel, LinkLabel, TextBox, \
+from System.Windows.Forms import Button, Label, Panel, LinkLabel, TextBox, \
    HorizontalAlignment, Keys, ToolTip
 
 
@@ -56,6 +57,7 @@ class IssueCoverPanel(Panel):
       self.__prevbutton = None
       self.__hint_textbox = None
       self.__hint_search_button = None
+      self.__hint_label = None
       self.__ref = None
       # the last SeriesRef passed to set_ref(), if any -- remembered so that
       # set_issue_num_hint() can re-trigger the search against it later.
@@ -78,7 +80,7 @@ class IssueCoverPanel(Panel):
       self.__nextbutton = self.__build_nextbutton()
       self.__prevbutton = self.__build_prevbutton()
       # tamaño inicial (será reajustado)
-      self.Size = Size(195, 385 if self.__editable_hint_b else 360)
+      self.Size = Size(195, 405 if self.__editable_hint_b else 360)
       self.Controls.Add(self.__coverpanel)
       self.Controls.Add(self.__prevbutton)
       self.Controls.Add(self.__label)
@@ -86,8 +88,10 @@ class IssueCoverPanel(Panel):
       if self.__editable_hint_b:
          self.__hint_textbox, self.__hint_search_button = \
             self.__build_hint_row()
+         self.__hint_label = self.__build_hint_label()
          self.Controls.Add(self.__hint_textbox)
          self.Controls.Add(self.__hint_search_button)
+         self.Controls.Add(self.__hint_label)
       self.set_ref(None)
       self.__do_layout()
 
@@ -128,6 +132,17 @@ class IssueCoverPanel(Panel):
       button.Click += search_clicked
 
       return tbox, button
+
+   # ==========================================================================
+   def __build_hint_label(self):
+      ''' builds and returns the small caption label shown below the
+      issue-number hint textbox+button, explaining what they're for. '''
+      label = Label()
+      label.Visible = self.__config.show_covers_b
+      label.UseMnemonic = False
+      label.TextAlign = ContentAlignment.MiddleCenter
+      label.Text = i18n.get("IssueCoverPanelHintLabel")
+      return label
 
    # ==========================================================================
    def __build_coverimage(self):
@@ -182,17 +197,20 @@ class IssueCoverPanel(Panel):
       if not self.__config.show_covers_b:
          return
       try:
-         padding = 4
-         label_height = 36
-         btn_h = 26
-         btn_w = 32
-         hint_h = 24 if self.__editable_hint_b else 0
+         scale_n = self.__config.ui_scale_n
+         padding = guistyle.scale(4, scale_n)
+         label_height = guistyle.scale(36, scale_n)
+         btn_h = guistyle.scale(26, scale_n)
+         btn_w = guistyle.scale(32, scale_n)
+         hint_h = guistyle.scale(24, scale_n) if self.__editable_hint_b else 0
+         hint_label_h = guistyle.scale(18, scale_n) if self.__editable_hint_b else 0
          w = self.ClientSize.Width
          h = self.ClientSize.Height
          if w <= 0 or h <= 0:
             return
          # espacio disponible para la imagen (restando label/botones/hint)
-         reserved_h = btn_h + padding*2 + (hint_h + padding if hint_h else 0)
+         hint_block_h = (hint_h + hint_label_h + padding*2) if hint_h else 0
+         reserved_h = btn_h + padding*2 + hint_block_h
          avail_height = max(10, h - reserved_h)
          avail_width = w
          # mantener aspect ratio W/H ~ 0.65 => H = W / 0.65
@@ -220,13 +238,24 @@ class IssueCoverPanel(Panel):
          self.__label.Size = Size(label_w, btn_h)
          if self.__editable_hint_b and self.__hint_textbox is not None:
             hint_y = btn_y + btn_h + padding
-            search_btn_w = min(60, max(36, int(w * 0.28)))
+            # size the button to whatever its own text/font actually need
+            # (plus a little breathing room), instead of a fixed pixel cap
+            # that doesn't necessarily fit "Search" at every font size.
+            min_btn_w = guistyle.scale(36, scale_n)
+            preferred_btn_w = self.__hint_search_button.PreferredSize.Width \
+               + guistyle.scale(8, scale_n)
+            search_btn_w = max(min_btn_w, min(preferred_btn_w, int(w * 0.5)))
             hint_tbox_w = max(20, w - padding*3 - search_btn_w)
             self.__hint_textbox.Location = Point(padding, hint_y)
             self.__hint_textbox.Size = Size(hint_tbox_w, hint_h)
             self.__hint_search_button.Location = \
                Point(padding*2 + hint_tbox_w, hint_y)
             self.__hint_search_button.Size = Size(search_btn_w, hint_h)
+            if self.__hint_label is not None:
+               label_y = hint_y + hint_h + padding
+               self.__hint_label.Location = Point(padding, label_y)
+               self.__hint_label.Size = \
+                  Size(max(20, w - padding*2), hint_label_h)
       except Exception:
          pass
       
@@ -248,6 +277,7 @@ class IssueCoverPanel(Panel):
       self.__label = None
       self.__hint_textbox = None
       self.__hint_search_button = None
+      self.__hint_label = None
       self.Dispose()
 
    # ==========================================================================

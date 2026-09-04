@@ -8,6 +8,7 @@ import log
 import clr
 from buttondgv import ButtonDataGridView
 from cvform import CVForm
+import guistyle
 from System.Windows.Forms import FormBorderStyle, DockStyle
 from utils import sstr, fix_ctrl_backspace
 from matchscore import MatchScore
@@ -95,13 +96,21 @@ class SeriesForm(CVForm):
       self.__book = book
       if len(series_refs) <= 0:
          raise Exception("do not invoke the SeriesForm with no series!")
-      CVForm.__init__(self, scraper.comicrack.MainWindow, "seriesformLocation")
+      CVForm.__init__(self, scraper.comicrack.MainWindow,
+         "seriesformLocation", "seriesformSize")
       log.debug('SeriesForm: building GUI (series count=%d)' % len(self.__series_refs))
       self.__build_gui(book, search_terms_s)
       scraper.cancel_listeners.append(self.Close)
 
    #===========================================================================   
    def __build_gui(self, book, search_terms_s):
+      # scale the form's font FIRST, before building any sub-components --
+      # several of them (e.g. the filters panel) size themselves against
+      # self.Font, so it must already reflect the current UI scale.
+      scale_n = self.__config.ui_scale_n
+      self.AutoScaleMode = AutoScaleMode.Font
+      self.Font = guistyle.scaled_font(self.Font, scale_n)
+
       self.__ok_button = self.__build_okbutton()
       self.__skip_button = self.__build_skipbutton()
       search_button = self.__build_searchbutton()
@@ -111,28 +120,60 @@ class SeriesForm(CVForm):
       self.__table = self.__build_table(self.__series_refs, book, self.__ok_button)
       self.__table_container = self.__build_filters_panel(self.__table)
       self.__coverpanel = self.__build_coverpanel(book)
-      self.AutoScaleMode = AutoScaleMode.Font
       self.ClientSize = Size(1200, 700)
+      self.MinimumSize = Size(700, 400)
       self.Text = i18n.get("SeriesFormTitle")
       self.FormClosed += self.__form_closed_fired
       self.KeyPreview = True
       self.KeyDown += self.__key_was_pressed
       self.KeyUp += self.__key_was_released
       self.Deactivate += self.__was_deactivated
-      self.FormBorderStyle = FormBorderStyle.Sizable
-      table_layout = TableLayoutPanel(); table_layout.RowCount = 3; table_layout.ColumnCount = 6; table_layout.Dock = DockStyle.Fill
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64))
+      table_layout = TableLayoutPanel(); table_layout.RowCount = 3; table_layout.ColumnCount = 2; table_layout.Dock = DockStyle.Fill
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.header_row_height(self.Font)))
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64))
-      for _ in range(5): table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 14.29))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.button_row_height(self.Font)))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 71.43))
       table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 28.57))
+
+      # buttons sublayout, isolated from the label/table columns above.
+      # each button's column is measured directly from its own text at
+      # the current font -- SizeType.AutoSize columns combined with a
+      # Dock=Fill button can under-measure the needed width and let the
+      # text silently wrap onto a second, invisible line (the row only
+      # ever reserves room for one), so we bypass AutoSize entirely here.
+      buttons_layout = TableLayoutPanel()
+      buttons_layout.ColumnCount = 6
+      buttons_layout.RowCount = 1
+      # without an explicit RowStyle, this row defaults to AutoSize (fits
+      # the buttons' own natural height) instead of filling the scaled
+      # height given to it by the outer row -- force it to fill instead.
+      buttons_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      for btn in (self.__ok_button, self.__skip_button, previous_button,
+            search_button, self.__issues_button):
+         buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+            System.Windows.Forms.SizeType.Absolute,
+            guistyle.button_column_width(btn.Text, self.Font)))
+      # trailing spacer column absorbs any leftover width, so the actual
+      # button columns stay at their measured (not stretched) size.
+      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      buttons_layout.Dock = DockStyle.Fill
+      buttons_layout.Controls.Add(self.__ok_button, 0, 0)
+      buttons_layout.Controls.Add(self.__skip_button, 1, 0)
+      buttons_layout.Controls.Add(previous_button, 2, 0)
+      buttons_layout.Controls.Add(search_button, 3, 0)
+      buttons_layout.Controls.Add(self.__issues_button, 4, 0)
+
       self.Controls.Add(table_layout)
-      table_layout.Controls.Add(label,0,0); table_layout.SetColumnSpan(label, 5)
-      table_layout.Controls.Add(self.__table_container,0,1); table_layout.SetColumnSpan(self.__table_container, 5)
-      table_layout.Controls.Add(self.__ok_button,0,2); table_layout.Controls.Add(self.__skip_button,1,2)
-      table_layout.Controls.Add(previous_button,2,2)
-      table_layout.Controls.Add(search_button,3,2); table_layout.Controls.Add(self.__issues_button,4,2)
-      table_layout.Controls.Add(self.__coverpanel,5,0); table_layout.SetRowSpan(self.__coverpanel, 3)
+      table_layout.Controls.Add(label,0,0)
+      table_layout.Controls.Add(self.__table_container,0,1)
+      table_layout.Controls.Add(buttons_layout,0,2)
+      table_layout.Controls.Add(self.__coverpanel,1,0); table_layout.SetRowSpan(self.__coverpanel, 3)
       self.__ok_button.TabIndex = 1; self.__skip_button.TabIndex = 2; previous_button.TabIndex = 3
       search_button.TabIndex = 4; self.__issues_button.TabIndex = 5
       self.__coverpanel.TabIndex = 6; self.__table.TabIndex = 7
@@ -144,9 +185,11 @@ class SeriesForm(CVForm):
    # ==========================================================================
    def __build_filters_panel(self, table):
       container = Panel(); container.Dock = DockStyle.Fill
-      # extra height (vs. the 24px the textboxes need) leaves a gap below
+      # extra height (vs. the textboxes' own height) leaves a gap below
       # them so the filter row doesn't look glued to the table underneath
-      filter_panel = Panel(); filter_panel.Height = 38; filter_panel.Dock = DockStyle.Top; filter_panel.BackColor = table.BackColor
+      filter_panel = Panel()
+      filter_panel.Height = guistyle.filter_row_height(self.Font)
+      filter_panel.Dock = DockStyle.Top; filter_panel.BackColor = table.BackColor
       # crear textboxes
       self.__filter_series = TextBox(); self.__filter_year = TextBox(); self.__filter_issues = TextBox(); self.__filter_publisher = TextBox()
       self.__filter_series.BorderStyle = self.__filter_year.BorderStyle = self.__filter_issues.BorderStyle = self.__filter_publisher.BorderStyle
@@ -160,7 +203,6 @@ class SeriesForm(CVForm):
       for tb in [self.__filter_series,self.__filter_year,self.__filter_issues,self.__filter_publisher]:
          tb.Top = 4
          tb.TextChanged += self.__filters_changed
-         tb.Height = 20
          fix_ctrl_backspace(tb)
          filter_panel.Controls.Add(tb)
       table.Dock = DockStyle.Fill
@@ -286,8 +328,7 @@ class SeriesForm(CVForm):
       table.AllowUserToResizeColumns = False
       table.DefaultCellStyle.NullValue = "--"
       table.Dock = DockStyle.Fill
-      table.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.EnableResizing
-      if table.ColumnHeadersHeight < 38: table.ColumnHeadersHeight = 42
+      table.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize
       table.ColumnCount = 7
       table.Columns[0].Name = i18n.get("SeriesFormSeriesCol"); table.Columns[0].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft; table.Columns[0].Resizable = DataGridViewTriState.True; table.Columns[0].FillWeight = 200; table.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
       table.Columns[1].Name = i18n.get("SeriesFormYearCol"); table.Columns[1].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; table.Columns[1].Resizable = DataGridViewTriState.True; table.Columns[1].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells

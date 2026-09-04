@@ -7,9 +7,10 @@ This module is home to the WelcomeForm class.
 import clr
 import i18n
 from resources import Resources
-from cvform import CVForm 
+from cvform import CVForm
 from System.Windows.Forms import FormBorderStyle, DockStyle
 from configform import ConfigForm
+import guistyle
 import System
 
 clr.AddReference('System.Windows.Forms')
@@ -35,50 +36,78 @@ class WelcomeForm(CVForm):
       'books' -> a list of all the comic books being scraped.
       '''
       
-      CVForm.__init__(self, scraper.comicrack.MainWindow, "welcomeformLocation")
+      self.__config = scraper.config
+      CVForm.__init__(self, scraper.comicrack.MainWindow,
+         "welcomeformLocation", "welcomeformSize")
       self.__build_gui(books);
 
-      
+
    # ==========================================================================
    def __build_gui(self, books):
       '''
        Constructs and initializes the gui for this form.
       'books' -> a list of all the comic books being scraped.
       '''
-      
+
       # 1. --- build each gui component
       label = self.__build_label(books)
       ok = self.__build_okbutton()
       settings = self.__build_settingsbutton()
       cancel = self.__build_cancelbutton()
-   
+
       # 2. --- configure this form, and add all the gui components to it
+      scale_n = self.__config.ui_scale_n
       self.AcceptButton = ok
       self.CancelButton = cancel
       self.AutoScaleMode = AutoScaleMode.Font
+      self.Font = guistyle.scaled_font(self.Font, scale_n)
       self.Text = Resources.SCRIPT_FULLNAME
       self.ClientSize = Size(500, 200)
-      self.FormBorderStyle = FormBorderStyle.Sizable
+      self.MinimumSize = Size(400, 160)
 
           # 2. --- create and configure the TableLayoutPanel
       table_layout = TableLayoutPanel()
       table_layout.RowCount = 2
-      table_layout.ColumnCount = 3
+      table_layout.ColumnCount = 1
       table_layout.Dock = DockStyle.Fill
 
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64))
-
-      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
-      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
-      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.button_row_height(self.Font)))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
       self.Controls.Add(table_layout)
 
+      # buttons sublayout, isolated from the label's column above. each
+      # button's column is measured directly from its own text at the
+      # current font -- SizeType.AutoSize columns combined with a
+      # Dock=Fill button can under-measure the needed width and let the
+      # text silently wrap onto a second, invisible line (the row only
+      # ever reserves room for one).
+      buttons_layout = TableLayoutPanel()
+      buttons_layout.ColumnCount = 4
+      buttons_layout.RowCount = 1
+      # without an explicit RowStyle, this row defaults to AutoSize (fits
+      # the buttons' own natural height) instead of filling the scaled
+      # height given to it by the outer row -- force it to fill instead.
+      buttons_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      for btn in (ok, cancel, settings):
+         buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+            System.Windows.Forms.SizeType.Absolute,
+            guistyle.button_column_width(btn.Text, self.Font)))
+      # trailing spacer column absorbs any leftover width, so the actual
+      # button columns stay at their measured (not stretched) size.
+      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      buttons_layout.Dock = DockStyle.Fill
+      buttons_layout.Controls.Add(ok, 0, 0)
+      buttons_layout.Controls.Add(cancel, 1, 0)
+      buttons_layout.Controls.Add(settings, 2, 0)
+
       table_layout.Controls.Add(label, 0, 0)
-      table_layout.SetColumnSpan(label, 3)
-      table_layout.Controls.Add(ok,0,1)
-      table_layout.Controls.Add(cancel,1,1)
-      table_layout.Controls.Add(settings,2,1)
+      table_layout.Controls.Add(buttons_layout, 0, 1)
       
       # 3. --- define the keyboard focus tab traversal ordering
       ok.TabIndex = 0

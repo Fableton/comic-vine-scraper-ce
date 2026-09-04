@@ -9,6 +9,7 @@ from cvform import CVForm
 from System.Windows.Forms import FormBorderStyle, DockStyle
 from configuration import Configuration, load_known_publishers_sl
 from utils import sstr
+import guistyle
 import i18n
 import System
 
@@ -16,9 +17,10 @@ clr.AddReference('System.Windows.Forms')
 from System.Windows.Forms import AutoScaleMode, Button, CheckBox, ComboBox, \
     ComboBoxStyle, ContextMenu, CheckedListBox, DataGridView, \
     DataGridViewAutoSizeColumnMode, DataGridViewButtonColumn, \
+    DataGridViewColumnHeadersHeightSizeMode, \
     DataGridViewContentAlignment, DataGridViewSelectionMode, DialogResult, \
     FlatStyle, Label, MenuItem, RichTextBox, SelectionMode, TabControl, \
-    TabPage, TextBox, LinkLabel, TableLayoutPanel
+    TabPage, TextBox, LinkLabel, TableLayoutPanel, TrackBar, TickStyle
 
 clr.AddReference('System.Drawing')
 from System.Drawing import Point, Size, ContentAlignment
@@ -104,49 +106,97 @@ class ConfigForm(CVForm):
 
       # the table listing all currently-ignored publishers (publishers tab)
       self.__publisher_table = None
-      
-      CVForm.__init__(self, owner, "configformLocation")
+
+      # the UI scale slider and its "NNN%" label (appearance tab)
+      self.__appearance_slider = None
+      self.__appearance_pct_label = None
+
+      # (RowStyle, height_func) pairs that __apply_scale() rescales live
+      # as the appearance slider moves
+      self.__scalable_rows = []
+
+      # (ColumnStyle, button) pairs that __apply_scale() re-measures live
+      # as the appearance slider moves, so each button's column always
+      # matches its own text at the current font
+      self.__scalable_columns = []
+
+      # load the persisted settings up front (instead of only inside
+      # show_form(), as before) so __build_gui() can size everything
+      # according to the user's saved UI scale from the very first paint,
+      # instead of building at 100% and immediately re-scaling.
+      self.__config = Configuration()
+      self.__config.load_defaults()
+      self.__scale_n = self.__config.ui_scale_n
+
+      CVForm.__init__(self, owner, "configformLocation", "configformSize")
       self.__build_gui()
           
          
           
-   # ==========================================================================          
+   # ==========================================================================
    def __build_gui(self):
       ''' Constructs and initializes the gui for this form. '''
-      
+
+      # the form's own, un-scaled font -- __apply_scale() always computes
+      # from this, never from an already-scaled self.Font, so repeated
+      # calls (as the appearance slider is dragged) don't compound.
+      self.__base_font = self.Font
+
       # 1. --- build each gui component
       self.__ok_button = self.__build_okbutton()
       self.__cancel_button = self.__build_cancel_button()
       self.__restore_button = self.__build_restore_button()
       self.__tabcontrol = self.__build_tabcontrol()
-      
+
 
           # 2. -- create and configure the TableLayoutPanel
       self.table_layout = TableLayoutPanel()
       self.table_layout.RowCount = 2
-      self.table_layout.ColumnCount = 3
+      self.table_layout.ColumnCount = 1
       self.table_layout.Dock = DockStyle.Fill
 
       self.table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
-      self.table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64))
+      self.__add_scaled_row(self.table_layout, guistyle.button_row_height)
+      self.table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
 
-      self.table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
-      self.table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
-      self.table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 33.33))
+      # buttons sublayout, isolated from the tabcontrol's column above --
+      # each button's column is measured (and live-rescaled) from its
+      # own text via __add_scaled_column(), instead of an even (and
+      # easily too narrow) 3-way split.
+      buttons_layout = TableLayoutPanel()
+      buttons_layout.ColumnCount = 4
+      buttons_layout.RowCount = 1
+      # without an explicit RowStyle, this row defaults to AutoSize (fits
+      # the buttons' own natural height) instead of filling the scaled
+      # height given to it by the outer row -- force it to fill instead.
+      buttons_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      for btn in (self.__restore_button, self.__cancel_button, self.__ok_button):
+         self.__add_scaled_column(buttons_layout, btn)
+      # trailing spacer column absorbs any leftover width, so the actual
+      # button columns stay at their measured (not stretched) size.
+      buttons_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      buttons_layout.Dock = DockStyle.Fill
+      buttons_layout.Controls.Add(self.__restore_button, 0, 0)
+      buttons_layout.Controls.Add(self.__cancel_button, 1, 0)
+      buttons_layout.Controls.Add(self.__ok_button, 2, 0)
 
       self.table_layout.Controls.Add(self.__tabcontrol, 0, 0)
-      self.table_layout.SetColumnSpan(self.__tabcontrol, 3)
-      self.table_layout.Controls.Add(self.__ok_button, 2, 1)
-      self.table_layout.Controls.Add(self.__cancel_button, 1, 1)
-      self.table_layout.Controls.Add(self.__restore_button, 0, 1)
+      self.table_layout.Controls.Add(buttons_layout, 0, 1)
 
       # 2. -- configure this form, and add all the gui components to it
       self.AutoScaleMode = AutoScaleMode.Font
       self.ClientSize = Size(700, 600)
-      self.FormBorderStyle = FormBorderStyle.Sizable
+      self.MinimumSize = Size(550, 450)
       self.Text = i18n.get("ConfigFormTitle")
-   
+
       self.Controls.Add(self.table_layout)
+
+      # apply the persisted UI scale (fonts + all rows registered above)
+      # now that every scalable control/row actually exists.
+      self.__apply_scale(self.__scale_n)
 
       # 3. -- define the keyboard focus tab traversal ordering
       self.__ok_button.TabIndex = 0                                        
@@ -158,6 +208,61 @@ class ConfigForm(CVForm):
 
       
       
+   # ==========================================================================
+   def __add_scaled_row(self, table_layout, height_func):
+      '''
+      Adds an Absolute RowStyle to 'table_layout', sized by calling
+      'height_func(self.Font)' -- one of guistyle's *_row_height()
+      functions, which derive the height from the font itself (so the
+      row always fits its text, at any scale) -- and remembers the pair
+      so the Appearance tab's slider can live-rescale it later via
+      __apply_scale().
+      '''
+      row_style = System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, height_func(self.Font))
+      table_layout.RowStyles.Add(row_style)
+      self.__scalable_rows.append((row_style, height_func))
+
+
+   # ==========================================================================
+   def __add_scaled_column(self, table_layout, button):
+      '''
+      Adds an Absolute ColumnStyle to 'table_layout', sized to fit
+      'button's own text at the current font on a single line (measured
+      directly, since SizeType.AutoSize columns combined with a
+      Dock=Fill button can under-measure the needed width and let the
+      text silently wrap onto a second, invisible line) -- and remembers
+      the pair so the Appearance tab's slider can live-rescale it later
+      via __apply_scale().
+      '''
+      col_style = System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.button_column_width(button.Text, self.Font))
+      table_layout.ColumnStyles.Add(col_style)
+      self.__scalable_columns.append((col_style, button))
+
+
+   # ==========================================================================
+   def __apply_scale(self, scale_n):
+      '''
+      Applies the given UI scale factor to this form's font and to every
+      row/column registered via __add_scaled_row()/__add_scaled_column(),
+      live -- called both when this form's Configuration is
+      loaded/restored, and as the Appearance tab's slider is dragged.
+      '''
+      self.__scale_n = scale_n
+      self.Font = guistyle.scaled_font(self.__base_font, scale_n)
+      for row_style, height_func in self.__scalable_rows:
+         row_style.Height = height_func(self.Font)
+      for col_style, button in self.__scalable_columns:
+         col_style.Width = guistyle.button_column_width(button.Text, self.Font)
+      if self.__appearance_slider is not None:
+         value_n = int(round(scale_n * 100))
+         if self.__appearance_slider.Value != value_n:
+            self.__appearance_slider.Value = value_n
+         self.__appearance_pct_label.Text = "{0}%".format(value_n)
+
+
    # ==========================================================================
    def __build_okbutton(self):
       ''' builds and returns the ok button for this form '''
@@ -214,6 +319,7 @@ class ConfigForm(CVForm):
       tabcontrol.Controls.Add( self.__build_behaviourtab() )
       tabcontrol.Controls.Add( self.__build_datatab() )
       tabcontrol.Controls.Add( self.__build_publisherstab() )
+      tabcontrol.Controls.Add( self.__build_appearancetab() )
       tabcontrol.Controls.Add( self.__build_advancedtab() )
       return tabcontrol
 
@@ -230,42 +336,55 @@ class ConfigForm(CVForm):
       label = Label()
       label.UseMnemonic = False
       label.AutoSize = False
-      label.Location = Point(34, 80)
-      label.Size = Size(315, 54)
+      label.Dock = DockStyle.Fill
       label.Text = i18n.get("ConfigFormComicVineText")
-      
-      # 2. --- the API key text box 
+
+      # 2. --- the API key text box
       fired_update_gui = self.__fired_update_gui
       class ApiKeyTextBox(TextBox):
          def OnTextChanged(self, args):
             fired_update_gui()
-            
+
       self.__api_key_tbox = ApiKeyTextBox()
       tbox = self.__api_key_tbox
-      tbox.Location = Point(34, 135)
-      tbox.Size = Size(315, 1)
-      
+      tbox.Dock = DockStyle.Fill
+
       menu = ContextMenu()
       items = menu.MenuItems
       items.Add( MenuItem(i18n.get("TextCut"), lambda s, ea : tbox.Cut() ) )
       items.Add( MenuItem(i18n.get("TextCopy"), lambda s, ea : tbox.Copy() ) )
       items.Add( MenuItem(i18n.get("TextPaste"), lambda s, ea : tbox.Paste() ) )
       tbox.ContextMenu = menu
-      
+
       # 3. --- add a clickable link to send the user to ComicVine
       linklabel = LinkLabel()
       linklabel.UseMnemonic = False
       linklabel.AutoSize = False
-      linklabel.Location = Point(34, 170) 
-      linklabel.Size = Size(315, 34)
+      linklabel.Dock = DockStyle.Fill
       linklabel.Text = i18n.get("ConfigFormComicVineClickHere")
       linklabel.LinkClicked += self.__fired_linkclicked
-      
-      # 4. --- add 'em all to this tabpage
-      tabpage.Controls.Add(label)
-      tabpage.Controls.Add(tbox)
-      tabpage.Controls.Add(linklabel)
-      
+
+      # 4. --- layout: description, api key field, link, then a spacer
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 4
+      table_layout.ColumnCount = 1
+      table_layout.Dock = DockStyle.Fill
+      table_layout.Padding = System.Windows.Forms.Padding(34, 20, 34, 0)
+      self.__add_scaled_row(table_layout, guistyle.header_row_height)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      self.__add_scaled_row(table_layout, guistyle.label_row_height)
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.Controls.Add(tbox, 0, 1)
+      table_layout.Controls.Add(linklabel, 0, 2)
+
+      # 5. --- add 'em all to this tabpage
+      tabpage.Controls.Add(table_layout)
+
       return tabpage
    
    
@@ -291,7 +410,7 @@ class ConfigForm(CVForm):
       table_layout.ColumnCount = 3
       table_layout.Dock = DockStyle.Fill
 
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 66))
+      self.__add_scaled_row(table_layout, guistyle.label_row_height)
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 66))
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 66))
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
@@ -384,13 +503,8 @@ class ConfigForm(CVForm):
       table_layout.ColumnCount = 2
       table_layout.Dock = DockStyle.Fill
       
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      for _ in range(7):
+         self.__add_scaled_row(table_layout, guistyle.control_row_height)
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
 
       table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 60))
@@ -497,11 +611,8 @@ class ConfigForm(CVForm):
       table_layout.ColumnCount = 2
       table_layout.Dock = DockStyle.Fill
       
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 50))
+      for _ in range(5):
+         self.__add_scaled_row(table_layout, guistyle.control_row_height)
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
 
       table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 60))
@@ -620,16 +731,13 @@ class ConfigForm(CVForm):
       table_layout.RowCount = 3
       table_layout.ColumnCount = 2
       table_layout.Dock = DockStyle.Fill
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
-         System.Windows.Forms.SizeType.Absolute, 40))
-      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
-         System.Windows.Forms.SizeType.Absolute, 30))
+      self.__add_scaled_row(table_layout, guistyle.label_row_height)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
          System.Windows.Forms.SizeType.Percent, 100))
       table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
          System.Windows.Forms.SizeType.Percent, 100))
-      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
-         System.Windows.Forms.SizeType.Absolute, 90))
+      self.__add_scaled_column(table_layout, add_button)
 
       table_layout.Controls.Add(label, 0, 0)
       table_layout.SetColumnSpan(label, 2)
@@ -666,6 +774,8 @@ class ConfigForm(CVForm):
       table.SelectionMode = DataGridViewSelectionMode.FullRowSelect
       table.MultiSelect = False
       table.Dock = DockStyle.Fill
+      table.ColumnHeadersHeightSizeMode = \
+         DataGridViewColumnHeadersHeightSizeMode.AutoSize
       table.ColumnCount = 2
       table.Columns[0].Name = i18n.get("ConfigFormPublishersCol")
       table.Columns[0].DefaultCellStyle.Alignment = \
@@ -675,7 +785,7 @@ class ConfigForm(CVForm):
       remove_col = DataGridViewButtonColumn()
       remove_col.Text = i18n.get("ConfigFormPublishersRemove")
       remove_col.UseColumnTextForButtonValue = True
-      remove_col.Width = 90
+      remove_col.Width = guistyle.scale(90, self.__scale_n)
       table.Columns.RemoveAt(1)
       table.Columns.Add(remove_col)
 
@@ -706,6 +816,69 @@ class ConfigForm(CVForm):
 
       if args.RowIndex >= 0 and args.ColumnIndex == 1:
          self.__publisher_table.Rows.RemoveAt(args.RowIndex)
+
+
+   # ==========================================================================
+   def __build_appearancetab(self):
+      ''' builds and returns the "Appearance" Tab for the TabControl '''
+
+      tabpage = TabPage()
+      tabpage.Text = i18n.get("ConfigFormAppearanceTab")
+
+      # 1. --- a description label for this tabpage
+      label = Label()
+      label.UseMnemonic = False
+      label.AutoSize = True
+      label.Dock = DockStyle.Fill
+      label.Text = i18n.get("ConfigFormAppearanceText")
+
+      # 2. --- the UI scale slider, plus a "NNN%" label showing its value
+      slider = TrackBar()
+      slider.Minimum = int(Configuration.MIN_UI_SCALE_N * 100)
+      slider.Maximum = int(Configuration.MAX_UI_SCALE_N * 100)
+      step_n = int(round(Configuration.UI_SCALE_STEP_N * 100))
+      slider.TickFrequency = step_n
+      slider.SmallChange = step_n
+      slider.LargeChange = step_n
+      slider.TickStyle = TickStyle.BottomRight
+      slider.Dock = DockStyle.Fill
+      slider.ValueChanged += self.__fired_scale_changed
+      self.__appearance_slider = slider
+
+      pct_label = Label()
+      pct_label.UseMnemonic = False
+      pct_label.AutoSize = False
+      pct_label.TextAlign = ContentAlignment.MiddleCenter
+      pct_label.Dock = DockStyle.Fill
+      self.__appearance_pct_label = pct_label
+
+      # 3. --- layout
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 2
+      table_layout.ColumnCount = 2
+      table_layout.Dock = DockStyle.Fill
+      self.__add_scaled_row(table_layout, lambda font: guistyle.label_row_height(font) * 2)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Absolute, 60))
+
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.SetColumnSpan(label, 2)
+      table_layout.Controls.Add(slider, 0, 1)
+      table_layout.Controls.Add(pct_label, 1, 1)
+
+      tabpage.Controls.Add(table_layout)
+      return tabpage
+
+
+   # ==========================================================================
+   def __fired_scale_changed(self, sender, args):
+      ''' called live, as the user drags the Appearance tab's UI scale
+      slider -- immediately re-scales this form's own fonts and rows, as
+      a live preview of what every other dialog will look like too. '''
+      self.__apply_scale(self.__appearance_slider.Value / 100.0)
 
 
    # ==========================================================================
@@ -760,9 +933,9 @@ class ConfigForm(CVForm):
       '''
       
       log.debug("opened the settings dialog.")
-      defaults = Configuration()
-      defaults.load_defaults()
-      self.__set_configuration(defaults) 
+      # self.__config was already loaded in __init__, so __build_gui()
+      # could size itself according to the persisted UI scale up front.
+      self.__set_configuration(self.__config)
       self.__switch_to_best_tab()
       dialogAnswer = self.ShowDialog() # blocks
       if dialogAnswer == DialogResult.OK:
@@ -855,6 +1028,9 @@ class ConfigForm(CVForm):
       for publisher_s in table_publishers_sl:
          config.add_ignored_publisher(publisher_s)
 
+      # 5. --- and the UI scale factor (appearance tab)
+      config.ui_scale_n = self.__appearance_slider.Value / 100.0
+
       return config
  
  
@@ -914,6 +1090,9 @@ class ConfigForm(CVForm):
       self.__publisher_table.Rows.Clear()
       for publisher_s in config.get_ignored_publishers_display_sl():
          self.__publisher_table.Rows.Add(publisher_s, None)
+
+      # 5. --- and the UI scale slider (appearance tab)
+      self.__apply_scale(config.ui_scale_n)
 
       self.__fired_update_gui()
       
