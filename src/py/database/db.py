@@ -23,12 +23,23 @@ from dbmodels import IssueRef
 from resources import Resources
 
 clr.AddReference('System')
-from System.IO import Directory
+from System import DateTime
+from System.IO import Directory, File, MemoryStream
+
+clr.AddReference('System.Drawing')
+from System.Drawing import Image
+from System.Drawing.Imaging import ImageFormat
 
 # how long (in seconds) a disk-cached list of a series's issues stays valid
 # before we go back to the network to refresh it (new issues get added to
 # a series over time, so we don't want to cache this forever). 1 day.
 __ISSUE_DISK_CACHE_TTL_SECONDS = 60 * 60 * 24
+
+# how long (in seconds) a disk-cached cover image stays valid before we
+# re-download it. Cover images essentially never change once published
+# (and a changed cover would typically get a new URL anyway), so this is
+# much more generous than the issue-list TTL above -- 90 days.
+__IMAGE_DISK_CACHE_TTL_SECONDS = 60 * 60 * 24 * 90
 
 
 # a limited-size cache for storing the results of SeriesRef searches
@@ -317,13 +328,80 @@ def query_issue(issue_ref, slow_data=False):
 def query_image(ref):
    '''
    This method takes either an IssueRef object, a SeriesRef object, or a direct
-   URL string, and queries the database for a single associated cover image.   
-   If no image can be found, if an error occurs, or if the given ref is None, 
+   URL string, and queries the database for a single associated cover image.
+   If no image can be found, if an error occurs, or if the given ref is None,
    this method will return None.
-   
+
    Note that the returned Image object (if there is one) is a .NET Image object,
    which must be explicitly Disposed() when you are done with it, in order
    to prevent memory leaks.
    '''
-   return utils.strip_back_cover( cvdb._query_image(ref) )
-   
+
+   # resolve the ref down to a plain image URL, since that's the thing that
+   # actually identifies the image (the same URL should always mean the
+   # same picture, no matter what kind of ref it came attached to) -- this
+   # is also exactly how cvdb._query_image resolves it internally.
+   image_url_s = ref if utils.is_string(ref) \
+      else getattr(ref, 'thumb_url_s', None)
+
+   if not image_url_s:
+      # nothing to key a disk cache on -- fall back to the old behavior
+      return utils.strip_back_cover( cvdb._query_image(ref) )
+
+   cache_path_s = __image_disk_cache_file_s(image_url_s)
+   image = __load_image_disk_cache(cache_path_s)
+   if image is None:
+      image = cvdb._query_image(ref)
+      __save_image_disk_cache(cache_path_s, image)
+   return utils.strip_back_cover(image)
+
+
+# =============================================================================
+def __image_disk_cache_file_s(image_url_s):
+   ''' Returns the on-disk cache file path for the given cover image URL. '''
+   safe_key_s = re.sub(r'[^A-Za-z0-9_-]', '_', image_url_s)[-180:]
+   return Resources.LOCAL_CACHE_DIRECTORY + r'\cover-' + safe_key_s
+
+
+# =============================================================================
+def __load_image_disk_cache(cache_path_s):
+   '''
+   Returns the Image object previously cached to disk at 'cache_path_s', or
+   None if there is no cache file for it, the cache file is older than
+   __IMAGE_DISK_CACHE_TTL_SECONDS, or it can't be read/decoded.
+   '''
+   try:
+      if not File.Exists(cache_path_s):
+         return None
+      age_n = (DateTime.UtcNow - File.GetLastWriteTimeUtc(cache_path_s)).TotalSeconds
+      if age_n < 0 or age_n > __IMAGE_DISK_CACHE_TTL_SECONDS:
+         return None # missing/corrupt timestamp, or the cache is stale
+      bytes_ar = File.ReadAllBytes(cache_path_s)
+      if bytes_ar is None or len(bytes_ar) == 0:
+         return None
+      return Image.FromStream(MemoryStream(bytes_ar))
+   except Exception:
+      import log
+      log.debug_exc("problem loading cover image disk cache")
+      return None
+
+
+# =============================================================================
+def __save_image_disk_cache(cache_path_s, image):
+   '''
+   Persists the given Image to disk at 'cache_path_s' (as PNG, so this is
+   the only time the image gets re-encoded -- every later read is a raw,
+   byte-for-byte copy), for later reuse by __load_image_disk_cache(). Does
+   nothing if 'image' is None. Failures are silently ignored -- disk
+   caching is a nice-to-have, not something scraping should ever fail on.
+   '''
+   if not image:
+      return
+   try:
+      Directory.CreateDirectory(Resources.LOCAL_CACHE_DIRECTORY)
+      ms = MemoryStream()
+      image.Save(ms, ImageFormat.Png)
+      File.WriteAllBytes(cache_path_s, ms.ToArray())
+   except Exception:
+      import log
+      log.debug_exc("problem saving cover image disk cache")

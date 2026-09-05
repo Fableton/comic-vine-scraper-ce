@@ -55,6 +55,10 @@ v1.0.102.
   dialog, so you can narrow a single search without changing your
   permanent Search Filters default -- the override only applies to that
   one search and is never saved to disk.
+- Cover/issue thumbnails shown while scraping are now cached to disk
+  (`db.query_image`, 90-day TTL), the same way series' issue lists
+  already were -- rescraping the same series or issue no longer
+  re-downloads its thumbnail every time.
 
 ## [1.0.102-ce2] - 2026-09-01
 
