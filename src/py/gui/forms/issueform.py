@@ -308,6 +308,7 @@ class IssueForm(CVForm):
          table.CurrentCell = table.Rows[0].Cells[0]
 
       table.SelectionChanged += self.__change_table_selection_fired
+      table.CellDoubleClick += self.__cell_double_clicked
       return table
 
 
@@ -623,7 +624,16 @@ class IssueForm(CVForm):
          self.__chosen_index = None
          self.__coverpanel.set_ref( None ) 
       self.__ok_button.Enabled = selected_rows.Count == 1
-      
+
+   # ==========================================================================
+   def __cell_double_clicked(self, sender, args):
+      ''' Called whenever the user double-clicks a cell in the table. Treats
+      it the same as selecting that row and pressing the OK button (args.
+      RowIndex is -1 for a double-click on the column header, which should
+      be ignored). '''
+      if args.RowIndex >= 0 and self.__ok_button.Enabled:
+         self.__ok_button.PerformClick()
+
    # ==========================================================================
    def __sort_compare_fired(self, sender, args):
       ''' this method is called whenever the table is resorted '''

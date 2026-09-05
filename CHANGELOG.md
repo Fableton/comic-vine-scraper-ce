@@ -5,6 +5,11 @@ starting from where it diverges from upstream
 [cbanack/comic-vine-scraper](https://github.com/cbanack/comic-vine-scraper)
 v1.0.102.
 
+## [Unreleased]
+
+- Double-clicking a row in the issue-selection window now picks that
+  issue immediately, the same as selecting it and clicking OK.
+
 ## [1.1.0-ce] - 2026-09-04
 
 - Added a "Previous Comic" button to the series-selection window,
