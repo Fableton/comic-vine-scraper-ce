@@ -41,15 +41,18 @@ class IssueForm(CVForm):
    the ok button to close this dialog and continue scraping her comic using the 
    identified IssueRef.
    '''
-   
+
    #===========================================================================
-   def __init__(self, scraper, issue_ref_hint, issue_refs, series_ref,
+   def __init__(self, scraper, book, issue_ref_hint, issue_refs, series_ref,
          has_previous_b=False):
       '''
       Initializes this form.  If a good issue key hint is given, that issue will
       be preselected in the table if possible.
 
       'scraper' -> the currently running ScrapeEngine
+      'book' -> the ComicBook currently being scraped -- used to compare its
+          own (local) cover against whichever issue's cover is currently
+          shown, and display a match percentage below it.
       'issue_ref_hint' -> may be the issue id for the given book (or may not!)
       'issue_refs' -> a set or list containing the IssueRefs to display
       'series_ref' -> SeriesRef for the series that the given issues belong to
@@ -59,6 +62,9 @@ class IssueForm(CVForm):
 
       # the the shared global configuration
       self.__config = scraper.config
+
+      # the book being scraped; used by the cover panel for match %'s
+      self.__book = book
 
       # whether the "Previous Comic" button should be enabled
       self.__has_previous_b = has_previous_b
@@ -102,10 +108,10 @@ class IssueForm(CVForm):
       
       # IssueCoverPAnel that shows the cover for the currently selected IssueRef
       self.__coverpanel = None
-      
+
       ## the index (into self.__issue_refs) of the currently selected IssueRef
       self.__chosen_index = None
-      
+
       if len(issue_refs) <= 0:
          raise Exception("do not invoke the IssueForm with no IssueRefs!")
       CVForm.__init__(self, scraper.comicrack.MainWindow,
@@ -148,8 +154,12 @@ class IssueForm(CVForm):
       main_layout = TableLayoutPanel()
       if self.__config.show_covers_b:
          main_layout.ColumnCount = 2
-         # left column fixed for cover panel, right column stretches
-         main_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 210))
+         # left column fixed for cover panel, right column stretches -- scaled
+         # along with everything inside it (buttons, fonts), so the cover
+         # panel's own labels don't get squeezed as ui_scale_n grows
+         main_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+            System.Windows.Forms.SizeType.Absolute,
+            guistyle.scale(210, self.__config.ui_scale_n)))
          main_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100))
       else:
          main_layout.ColumnCount = 1
@@ -569,9 +579,25 @@ class IssueForm(CVForm):
    # ==========================================================================
    def __build_coverpanel(self):
       ''' builds and returns the IssueCoverPanel for this form '''
-      panel = IssueCoverPanel(self.__config)
+      panel = IssueCoverPanel(self.__config, book=self.__book,
+         on_auto_accept=self.__auto_accept_fired,
+         on_auto_skip=self.__auto_skip_fired)
       return panel
-   
+
+   # ==========================================================================
+   def __auto_accept_fired(self):
+      ''' called by the IssueCoverPanel when its auto-accept/skip countdown
+      (see its own "Auto-accept" checkbox) reaches zero with a match that
+      met the threshold '''
+      if self.__ok_button.Enabled:
+         self.__ok_button.PerformClick()
+
+   # ==========================================================================
+   def __auto_skip_fired(self):
+      ''' called by the IssueCoverPanel when its auto-accept/skip countdown
+      reaches zero with a match that DIDN'T meet the threshold '''
+      self.__skip_button.PerformClick()
+
    # ==========================================================================
    def show_form(self):
       '''
@@ -611,7 +637,7 @@ class IssueForm(CVForm):
       self.__table.Dispose()
       self.__coverpanel.free()
       self.Closed -= self.__form_closed_fired
-      
+
    # ==========================================================================
    def __change_table_selection_fired(self, sender, args):
       ''' this method is called whenever the table's selected row changes '''

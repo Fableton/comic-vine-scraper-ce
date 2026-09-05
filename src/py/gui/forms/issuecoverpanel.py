@@ -5,12 +5,14 @@ This module is home to the IssueCoverPanel class.
 @author: Cory Banack
 '''
 import clr
+import log
 from dbmodels import IssueRef, SeriesRef
 from dbpicturebox import DBPictureBox
 from scheduler import Scheduler
 import utils
 from utils import sstr
 import db
+import imagehash
 import guistyle
 import i18n
 
@@ -18,8 +20,8 @@ clr.AddReference('System.Drawing')
 from System.Drawing import ContentAlignment, Font, FontStyle, Point, Size
 
 clr.AddReference('System.Windows.Forms')
-from System.Windows.Forms import Button, Label, Panel, LinkLabel, TextBox, \
-   HorizontalAlignment, Keys, ToolTip
+from System.Windows.Forms import Button, CheckBox, Label, NumericUpDown, \
+   Panel, LinkLabel, TextBox, HorizontalAlignment, Keys, Timer, ToolTip
 
 
 
@@ -33,15 +35,36 @@ class IssueCoverPanel(Panel):
    '''
    
    COMIC_WIDTH_HEIGHT_RATIO = 0.65  # approx (width / height) for a comic cover
-   
+
+   # default value for the auto-accept threshold numeric input (the user
+   # can change it per-session via the input itself; see
+   # __build_auto_accept_threshold_nud)
+   __DEFAULT_AUTO_ACCEPT_THRESHOLD_N = 85
+
+   # how many seconds the auto-accept/skip countdown runs before firing
+   __AUTO_ACCEPT_SECONDS_N = 5
+
    #===========================================================================
-   def __init__(self, config, issue_num_hint_s=None, editable_hint_b=False):
+   def __init__(self, config, issue_num_hint_s=None, editable_hint_b=False,
+         book=None, on_auto_accept=None, on_auto_skip=None):
       '''
       'editable_hint_b' -> when True, this panel also shows a small textbox
       below the cover (pre-filled with issue_num_hint_s) that lets the user
       type/edit an issue number; pressing Enter or leaving the textbox
       re-runs the cover search for that number, within whichever SeriesRef
       is currently selected (see set_issue_num_hint()).
+
+      'book' -> if given, the local ComicBook being scraped. when present,
+      this panel compares that book's own (local) cover against whichever
+      remote cover is currently displayed, and shows a match percentage
+      below it, plus an "Auto-accept" checkbox + threshold input: once
+      checked, every time a match result becomes known for the cover
+      currently on screen, a countdown starts that ends by calling
+      'on_auto_accept' (if the match met the threshold) or 'on_auto_skip'
+      (if it didn't) -- unless cancelled first (by picking a different
+      issue, unchecking the box, or clicking the countdown's "Cancel"
+      link). Both callbacks take no arguments. If 'book' is None, none of
+      this (percentage, checkbox, or callbacks) is ever shown/used.
       '''
       self.__config = config
       self.__issue_num_hint_s = issue_num_hint_s
@@ -50,8 +73,26 @@ class IssueCoverPanel(Panel):
       # actually changed it, versus it still being the auto-detected value.
       self.__original_issue_num_hint_s = issue_num_hint_s
       self.__editable_hint_b = editable_hint_b
+      self.__book = book
+      self.__on_auto_accept = on_auto_accept
+      self.__on_auto_skip = on_auto_skip
       self.__coverpanel = None
       self.__label = None
+      self.__match_label = None
+      self.__auto_accept_checkbox = None
+      self.__auto_accept_threshold_nud = None
+      self.__auto_accept_status_label = None
+      # ref this panel is currently counting down for, or None -- lets a
+      # spurious re-trigger of the SAME ref (e.g. "(more covers)" finishing
+      # its search) avoid resetting an already-running countdown
+      self.__auto_accept_active_ref = None
+      # what the current countdown will do once it reaches 0: True to
+      # click OK, False to click Skip
+      self.__auto_accept_will_accept_b = False
+      self.__auto_accept_seconds_left_n = 0
+      self.__auto_accept_timer = Timer()
+      self.__auto_accept_timer.Interval = 1000
+      self.__auto_accept_timer.Tick += self.__auto_accept_tick_fired
       self.__link_callback = None
       self.__nextbutton = None
       self.__prevbutton = None
@@ -64,11 +105,35 @@ class IssueCoverPanel(Panel):
       self.__series_ref = None
       self.__button_cache = {}
       self.__series_cache = {}
+      # the local book's own cover-image hash, computed once in the
+      # background (see __compute_local_hash). __local_hash_ready_b is False
+      # until that computation finishes -- __local_hash itself may still be
+      # None even once ready_b is True, if the hash genuinely couldn't be
+      # computed (e.g. no readable first page); that's a permanent result,
+      # distinct from "still computing", so it doesn't get retried forever.
+      self.__local_hash = None
+      self.__local_hash_ready_b = False
+      # ref -> match percentage (int, or None if it couldn't be determined),
+      # so re-showing a previously-compared cover (e.g. clicking back and
+      # forth between alt covers) doesn't require recomputing it.
+      self.__match_cache = {}
       self.__finder_scheduler = Scheduler()
       self.__setter_scheduler = Scheduler()
+      # a Scheduler only ever runs its most recently submitted task, silently
+      # dropping whatever was queued before it -- so the one-time local-hash
+      # computation gets its OWN scheduler, separate from __match_scheduler
+      # (which submits a new per-cover task every time the shown cover
+      # changes). sharing one scheduler between them let a per-cover match
+      # task submitted right after startup permanently evict the not-yet-
+      # started local-hash task, leaving the match label stuck on
+      # "Comparing covers..." forever.
+      self.__local_hash_scheduler = Scheduler()
+      self.__match_scheduler = Scheduler()
       self.__alt_cover_choice = None
       Panel.__init__(self)
       self.__build_gui()
+      if self.__book is not None:
+         self.__compute_local_hash()
       # manejar redimensionamiento dinámico
       self.Resize += self.__on_resize
       self.PerformLayout()
@@ -80,11 +145,22 @@ class IssueCoverPanel(Panel):
       self.__nextbutton = self.__build_nextbutton()
       self.__prevbutton = self.__build_prevbutton()
       # tamaño inicial (será reajustado)
-      self.Size = Size(195, 405 if self.__editable_hint_b else 360)
+      extra_h = guistyle.scale(60, self.__config.ui_scale_n) \
+         if self.__book is not None else 0
+      self.Size = Size(195, (405 if self.__editable_hint_b else 360) + extra_h)
       self.Controls.Add(self.__coverpanel)
       self.Controls.Add(self.__prevbutton)
       self.Controls.Add(self.__label)
       self.Controls.Add(self.__nextbutton)
+      if self.__book is not None:
+         self.__match_label = self.__build_match_label()
+         self.__auto_accept_checkbox = self.__build_auto_accept_checkbox()
+         self.__auto_accept_threshold_nud = self.__build_auto_accept_threshold_nud()
+         self.__auto_accept_status_label = self.__build_auto_accept_status_label()
+         self.Controls.Add(self.__match_label)
+         self.Controls.Add(self.__auto_accept_checkbox)
+         self.Controls.Add(self.__auto_accept_threshold_nud)
+         self.Controls.Add(self.__auto_accept_status_label)
       if self.__editable_hint_b:
          self.__hint_textbox, self.__hint_search_button = \
             self.__build_hint_row()
@@ -167,6 +243,65 @@ class IssueCoverPanel(Panel):
       return label
    
    # ==========================================================================
+   def __build_match_label(self):
+      ''' builds and returns the small label (shown only when this panel was
+      built with a 'book') that displays the currently shown cover's match
+      percentage against that book's own (local) cover. '''
+      label = Label()
+      label.UseMnemonic = False
+      label.AutoSize = False
+      label.Visible = self.__config.show_covers_b
+      label.TextAlign = ContentAlignment.MiddleCenter
+      return label
+
+   # ==========================================================================
+   def __build_auto_accept_checkbox(self):
+      ''' builds and returns the "auto-accept" checkbox. its checked state
+      is remembered in the config's session_data_map, so it stays set
+      across every book in this scrape session (not just this one
+      dialog), but resets the next time ComicRack is restarted. '''
+      checkbox = CheckBox()
+      checkbox.AutoSize = True
+      checkbox.Visible = self.__config.show_covers_b
+      checkbox.Text = i18n.get("IssueCoverPanelAutoAcceptCheckbox")
+      checkbox.Checked = bool(self.__config.session_data_map.get(
+         'auto_accept_high_matches_b', False))
+      checkbox.CheckedChanged += self.__auto_accept_checkbox_changed_fired
+      tip = ToolTip()
+      tip.SetToolTip(checkbox, i18n.get("IssueCoverPanelAutoAcceptTooltip"))
+      return checkbox
+
+   # ==========================================================================
+   def __build_auto_accept_threshold_nud(self):
+      ''' builds and returns the auto-accept match-percentage threshold
+      input. its value is remembered the same way (and for the same
+      reason) as the auto-accept checkbox's checked state, above. '''
+      nud = NumericUpDown()
+      nud.Visible = self.__config.show_covers_b
+      nud.Minimum = 1
+      nud.Maximum = 100
+      nud.Value = max(nud.Minimum, min(nud.Maximum, int(
+         self.__config.session_data_map.get('auto_accept_threshold_n',
+            self.__DEFAULT_AUTO_ACCEPT_THRESHOLD_N))))
+      nud.ValueChanged += self.__auto_accept_threshold_changed_fired
+      tip = ToolTip()
+      tip.SetToolTip(nud, i18n.get("IssueCoverPanelAutoAcceptTooltip"))
+      return nud
+
+   # ==========================================================================
+   def __build_auto_accept_status_label(self):
+      ''' builds and returns the label that shows the auto-accept/skip
+      countdown (with a clickable "Cancel" link to stop it); empty (and
+      inert) whenever no countdown is running. '''
+      label = LinkLabel()
+      label.UseMnemonic = False
+      label.AutoSize = False
+      label.Visible = self.__config.show_covers_b
+      label.TextAlign = ContentAlignment.MiddleCenter
+      label.LinkClicked += self.__auto_accept_cancel_clicked_fired
+      return label
+
+   # ==========================================================================
    def __build_nextbutton(self):
       button = Button()
       button.Location = Point(173, 332)
@@ -204,13 +339,30 @@ class IssueCoverPanel(Panel):
          btn_w = guistyle.scale(32, scale_n)
          hint_h = guistyle.scale(24, scale_n) if self.__editable_hint_b else 0
          hint_label_h = guistyle.scale(18, scale_n) if self.__editable_hint_b else 0
+         # 2 lines' worth -- "Cover Match: NN%"/"Comparing covers..." can
+         # wrap onto a second line in a narrow column or at a large ui
+         # scale, and both lines need to stay visible when that happens
+         match_h = guistyle.label_row_height(self.Font) * 2 \
+            if self.__match_label is not None else 0
+         # row for the auto-accept checkbox + threshold input
+         auto_accept_h = guistyle.control_row_height(self.Font) \
+            if self.__auto_accept_checkbox is not None else 0
+         # 2 lines' worth, same reasoning as match_h above -- the
+         # accept/skip countdown text plus its "Cancel" link can wrap
+         auto_accept_status_h = guistyle.label_row_height(self.Font) * 2 \
+            if self.__auto_accept_status_label is not None else 0
          w = self.ClientSize.Width
          h = self.ClientSize.Height
          if w <= 0 or h <= 0:
             return
          # espacio disponible para la imagen (restando label/botones/hint)
          hint_block_h = (hint_h + hint_label_h + padding*2) if hint_h else 0
-         reserved_h = btn_h + padding*2 + hint_block_h
+         match_block_h = (match_h + padding) if match_h else 0
+         auto_accept_block_h = (auto_accept_h + padding) if auto_accept_h else 0
+         auto_accept_status_block_h = \
+            (auto_accept_status_h + padding) if auto_accept_status_h else 0
+         reserved_h = btn_h + padding*2 + match_block_h + \
+            auto_accept_block_h + auto_accept_status_block_h + hint_block_h
          avail_height = max(10, h - reserved_h)
          avail_width = w
          # mantener aspect ratio W/H ~ 0.65 => H = W / 0.65
@@ -236,8 +388,31 @@ class IssueCoverPanel(Panel):
          label_w = max(20, self.__nextbutton.Left - padding - label_x)
          self.__label.Location = Point(label_x, btn_y)
          self.__label.Size = Size(label_w, btn_h)
+         next_y = btn_y + btn_h
+         if self.__match_label is not None:
+            next_y += padding
+            self.__match_label.Location = Point(padding, next_y)
+            self.__match_label.Size = Size(max(20, w - padding*2), match_h)
+            next_y += match_h
+         if self.__auto_accept_checkbox is not None:
+            next_y += padding
+            nud_w = guistyle.scale(50, scale_n)
+            nud_x = w - padding - nud_w
+            self.__auto_accept_threshold_nud.Location = Point(nud_x, next_y)
+            self.__auto_accept_threshold_nud.Size = Size(nud_w, auto_accept_h)
+            cb_x = padding
+            cb_w = max(20, nud_x - padding - cb_x)
+            self.__auto_accept_checkbox.Location = Point(cb_x, next_y)
+            self.__auto_accept_checkbox.Size = Size(cb_w, auto_accept_h)
+            next_y += auto_accept_h
+         if self.__auto_accept_status_label is not None:
+            next_y += padding
+            self.__auto_accept_status_label.Location = Point(padding, next_y)
+            self.__auto_accept_status_label.Size = \
+               Size(max(20, w - padding*2), auto_accept_status_h)
+            next_y += auto_accept_status_h
          if self.__editable_hint_b and self.__hint_textbox is not None:
-            hint_y = btn_y + btn_h + padding
+            hint_y = next_y + padding
             # size the button to whatever its own text/font actually need
             # (plus a little breathing room), instead of a fixed pixel cap
             # that doesn't necessarily fit "Search" at every font size.
@@ -260,7 +435,11 @@ class IssueCoverPanel(Panel):
          pass
       
    # ==========================================================================
-   def free(self): 
+   def free(self):
+      if self.__book is not None:
+         log.debug('IssueCoverPanel[%s]: closing (local hash ready=%s, '
+            'value=%s)' % (sstr(getattr(self.__book, 'path_s', None)),
+               self.__local_hash_ready_b, sstr(self.__local_hash)))
       if type(self.__ref) == IssueRef:
          issue_ref = self.__ref
          button_model = self.__button_cache[issue_ref]
@@ -270,11 +449,19 @@ class IssueCoverPanel(Panel):
                self.__alt_cover_choice = (issue_ref, image_ref)
       self.__finder_scheduler.shutdown(False)
       self.__setter_scheduler.shutdown(False)
+      self.__local_hash_scheduler.shutdown(False)
+      self.__match_scheduler.shutdown(False)
       self.set_ref(None)
+      self.__auto_accept_timer.Stop()
+      self.__auto_accept_timer.Dispose()
       self.__coverpanel.free()
       self.__prevbutton = None
       self.__nextbutton = None
       self.__label = None
+      self.__match_label = None
+      self.__auto_accept_checkbox = None
+      self.__auto_accept_threshold_nud = None
+      self.__auto_accept_status_label = None
       self.__hint_textbox = None
       self.__hint_search_button = None
       self.__hint_label = None
@@ -358,6 +545,7 @@ class IssueCoverPanel(Panel):
          nextbutton.Visible = False
          prevbutton.Visible = False
          label.Text = ''
+         self.__trigger_match_update(None)
       else:
          if not cache.has_key(ref):
             cache[ref] = _ButtonModel(ref, 'searched' if type(ref) == SeriesRef else 'not-searched')
@@ -365,6 +553,7 @@ class IssueCoverPanel(Panel):
          cover_image.set_image_ref( bmodel.get_current_ref() )
          nextbutton.Visible = cover_image.Visible and bmodel.can_increment()
          prevbutton.Visible = cover_image.Visible and bmodel.can_decrement()
+         self.__trigger_match_update(bmodel.get_current_ref())
          label.Links.Clear()
          self.__link_callback = None
          issue_num_s = ref.issue_num_s if type(ref) == IssueRef else ''
@@ -403,6 +592,224 @@ class IssueCoverPanel(Panel):
                utils.invoke(self, update_bmodel, True)
             scheduler.submit(update_cache)
       self.__do_layout()
+
+   # ==========================================================================
+   def __compute_local_hash(self):
+      ''' Computes (in the background) the image hash of self.__book's own
+      cover, i.e. the first page of the comic being scraped -- this is
+      compared against remote covers as they're shown, to produce a match
+      percentage (see __trigger_match_update). Has no effect if this panel
+      wasn't built with a 'book'. '''
+      book = self.__book
+      path_s = sstr(getattr(book, 'path_s', None)) if book else '?'
+      log.debug('IssueCoverPanel[%s]: local hash computation queued' % path_s)
+      def task():
+         hash_val = None
+         try:
+            image = book.create_image_of_page(0) if book else None
+            if not image:
+               log.debug('IssueCoverPanel[%s]: no page-0 image to hash' % path_s)
+            else:
+               try:
+                  image = utils.strip_back_cover(image)
+                  hash_val = imagehash.hash(image)
+                  log.debug('IssueCoverPanel[%s]: local hash computed -> %s'
+                     % (path_s, sstr(hash_val)))
+               finally:
+                  image.Dispose()
+         except Exception:
+            log.debug_exc('IssueCoverPanel[%s]: local hash computation failed'
+               % path_s)
+         def apply():
+            self.__local_hash = hash_val
+            self.__local_hash_ready_b = True
+            log.debug('IssueCoverPanel[%s]: local hash ready (value=%s) '
+               '-- refreshing whatever cover is on screen'
+               % (path_s, sstr(hash_val)))
+            # any match % computed while this was still pending was never
+            # cached (see __trigger_match_update) -- now that we finally
+            # know the local hash (or that it's unavailable), re-check
+            # whatever cover is currently on screen.
+            if self.__ref is not None and self.__button_cache.has_key(self.__ref):
+               self.__trigger_match_update(
+                  self.__button_cache[self.__ref].get_current_ref())
+         utils.invoke(self, apply, False)
+      self.__local_hash_scheduler.submit(task)
+
+   # ==========================================================================
+   def __trigger_match_update(self, ref):
+      ''' Updates (computing in the background if needed) the match-percent
+      label to reflect how similar the local book's cover is to the remote
+      cover identified by 'ref' (None clears the label). Has no effect if
+      this panel wasn't built with a 'book'. '''
+      if self.__match_label is None:
+         return
+      if ref is None:
+         self.__set_match_text(None)
+         self.__cancel_auto_accept()
+         return
+      if ref in self.__match_cache:
+         log.debug('IssueCoverPanel: match cache hit for %s -> %s%%'
+            % (sstr(ref), sstr(self.__match_cache[ref])))
+         self.__set_match_text(self.__match_cache[ref])
+         self.__evaluate_auto_accept(ref, self.__match_cache[ref])
+         return
+      # a genuinely new (uncached) cover is about to be evaluated -- any
+      # countdown still running belongs to whatever was shown before it
+      self.__cancel_auto_accept()
+      log.debug('IssueCoverPanel: match compute queued for %s '
+         '(local hash ready=%s)' % (sstr(ref), self.__local_hash_ready_b))
+      self.__match_label.Text = i18n.get("IssueCoverPanelMatchComputing")
+      def compute():
+         pct_n = None
+         ready_b = self.__local_hash_ready_b
+         local_hash = self.__local_hash
+         try:
+            if ready_b and local_hash is not None:
+               image = db.query_image(ref)
+               if not image:
+                  log.debug('IssueCoverPanel: no remote image for %s' % sstr(ref))
+               else:
+                  try:
+                     remote_hash = imagehash.hash(image)
+                     pct_n = int(round(
+                        imagehash.similarity(local_hash, remote_hash) * 100))
+                  finally:
+                     image.Dispose()
+         except Exception:
+            log.debug_exc('IssueCoverPanel: match compute failed for %s'
+               % sstr(ref))
+         def apply():
+            if not ready_b:
+               # the local hash wasn't ready yet when this task started --
+               # leave the "comparing" text as-is (don't cache anything
+               # either), and wait for __compute_local_hash to retrigger
+               # this once it's ready, instead of getting stuck showing
+               # "comparing" forever.
+               log.debug('IssueCoverPanel: local hash still not ready -- '
+                  'leaving "%s" showing for %s'
+                  % (self.__match_label.Text if self.__match_label else '?',
+                     sstr(ref)))
+               return
+            self.__match_cache[ref] = pct_n
+            log.debug('IssueCoverPanel: match result for %s = %s'
+               % (sstr(ref), sstr(pct_n)))
+            current_ref = self.__button_cache[self.__ref].get_current_ref() \
+               if self.__ref is not None \
+               and self.__button_cache.has_key(self.__ref) else None
+            if current_ref == ref:
+               self.__set_match_text(pct_n)
+               self.__evaluate_auto_accept(ref, pct_n)
+            else:
+               log.debug('IssueCoverPanel: match for %s arrived after the '
+                  'cover moved on (now showing %s) -- not displayed'
+                  % (sstr(ref), sstr(current_ref)))
+         utils.invoke(self, apply, False)
+      self.__match_scheduler.submit(compute)
+
+   # ==========================================================================
+   def __set_match_text(self, pct_n):
+      ''' Shows the given match percentage (an int, or None if unavailable)
+      in the match-percent label. '''
+      if self.__match_label is None:
+         return
+      self.__match_label.Text = i18n.get("IssueCoverPanelMatchPercent") \
+         .format(sstr(pct_n)) if pct_n is not None else ''
+
+   # ==========================================================================
+   def __evaluate_auto_accept(self, ref, pct_n):
+      ''' Called whenever a real match result (pct_n, possibly None if it
+      couldn't be determined) is settled for 'ref', which must be the
+      cover currently on screen. If the auto-accept checkbox is checked,
+      (re)starts the countdown -- towards accepting if pct_n meets the
+      threshold, towards skipping otherwise. Does nothing if the checkbox
+      is unchecked, or if a countdown for this same ref is already
+      running (so a spurious re-trigger, e.g. "(more covers)" finishing
+      its search, doesn't reset an in-progress countdown). '''
+      if self.__auto_accept_checkbox is None or \
+            not self.__auto_accept_checkbox.Checked:
+         return
+      if self.__auto_accept_timer.Enabled and \
+            self.__auto_accept_active_ref == ref:
+         return
+      threshold_n = int(self.__auto_accept_threshold_nud.Value)
+      accept_b = pct_n is not None and pct_n >= threshold_n
+      log.debug('IssueCoverPanel: auto-%s countdown starting for %s '
+         '(match=%s, threshold=%s)' % ('accept' if accept_b else 'skip',
+            sstr(ref), sstr(pct_n), threshold_n))
+      self.__auto_accept_active_ref = ref
+      self.__start_auto_accept(accept_b)
+
+   # ==========================================================================
+   def __start_auto_accept(self, accept_b):
+      ''' (re)starts the auto-accept/skip countdown from
+      __AUTO_ACCEPT_SECONDS_N, ending in an accept if 'accept_b', a skip
+      otherwise. '''
+      self.__auto_accept_timer.Stop()
+      self.__auto_accept_will_accept_b = accept_b
+      self.__auto_accept_seconds_left_n = self.__AUTO_ACCEPT_SECONDS_N
+      self.__update_auto_accept_label()
+      self.__auto_accept_timer.Start()
+
+   # ==========================================================================
+   def __cancel_auto_accept(self):
+      ''' Stops the auto-accept/skip countdown (if running) and clears its
+      status label; harmless to call when it isn't running. '''
+      self.__auto_accept_timer.Stop()
+      self.__auto_accept_active_ref = None
+      if self.__auto_accept_status_label is not None:
+         self.__auto_accept_status_label.Links.Clear()
+         self.__auto_accept_status_label.Text = ''
+
+   # ==========================================================================
+   def __auto_accept_tick_fired(self, sender, args):
+      ''' Called once per second while the auto-accept/skip countdown
+      runs. '''
+      self.__auto_accept_seconds_left_n -= 1
+      if self.__auto_accept_seconds_left_n <= 0:
+         accept_b = self.__auto_accept_will_accept_b
+         self.__cancel_auto_accept()
+         callback = self.__on_auto_accept if accept_b else self.__on_auto_skip
+         if callback:
+            callback()
+      else:
+         self.__update_auto_accept_label()
+
+   # ==========================================================================
+   def __update_auto_accept_label(self):
+      ''' Refreshes the status label to show the current countdown value
+      (accepting or skipping, whichever this countdown will end in), with
+      a clickable "Cancel" link appended to it. '''
+      label = self.__auto_accept_status_label
+      if label is None:
+         return
+      key = "IssueCoverPanelAutoAcceptCountdownAccept" \
+         if self.__auto_accept_will_accept_b \
+         else "IssueCoverPanelAutoAcceptCountdownSkip"
+      countdown_s = i18n.get(key).format(self.__auto_accept_seconds_left_n)
+      cancel_s = i18n.get("IssueCoverPanelAutoAcceptCancel")
+      label.Text = countdown_s + "  " + cancel_s
+      label.Links.Clear()
+      label.Links.Add(len(countdown_s) + 2, len(cancel_s))
+
+   # ==========================================================================
+   def __auto_accept_cancel_clicked_fired(self, sender, args):
+      ''' Called when the user clicks the "Cancel" link in the countdown. '''
+      self.__cancel_auto_accept()
+
+   # ==========================================================================
+   def __auto_accept_checkbox_changed_fired(self, sender, args):
+      ''' Called whenever the user (un)checks the auto-accept checkbox. '''
+      checked_b = self.__auto_accept_checkbox.Checked
+      self.__config.session_data_map['auto_accept_high_matches_b'] = checked_b
+      if not checked_b:
+         self.__cancel_auto_accept()
+
+   # ==========================================================================
+   def __auto_accept_threshold_changed_fired(self, sender, args):
+      ''' Called whenever the user changes the auto-accept threshold. '''
+      self.__config.session_data_map['auto_accept_threshold_n'] = \
+         int(self.__auto_accept_threshold_nud.Value)
 
    # ==========================================================================
    def __button_click_fired(self, sender, args):

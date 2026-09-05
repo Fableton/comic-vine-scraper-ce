@@ -54,7 +54,7 @@ def _query_series_ids_dom(API_KEY, searchterm_s, page_n=1):
    # {0} is the search string, {1} is the page number of the results we want
    QUERY = 'https://comicvine.gamespot.com/api/search/?api_key=' + API_KEY + \
       __CLIENTID + '&format=xml&limit=100&resources=volume' + \
-      '&field_list=name,start_year,publisher,id,image,count_of_issues' + \
+      '&field_list=name,start_year,publisher,id,image,count_of_issues,deck' + \
       '&query={0}'
    # leave "page=1" off of query to fix a bug, e.g. search for 'bprd vampire'
    PAGE = "" if page_n == 1 else "&page={0}".format(page_n)
@@ -77,7 +77,7 @@ def _query_series_details_dom(API_KEY, seriesid_s):
    # {0} is the series id, an integer.
    QUERY = 'https://comicvine.gamespot.com/api/volume/4050-{0}/?api_key=' \
      + API_KEY + __CLIENTID + '&format=xml' \
-     + '&field_list=name,start_year,publisher,image,count_of_issues,id'
+     + '&field_list=name,start_year,publisher,image,count_of_issues,id,deck'
       # parsing relies on 'field_list' specifying 2 or more elements!!
       
    if seriesid_s is None or seriesid_s == '':

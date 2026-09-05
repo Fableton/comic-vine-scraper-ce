@@ -139,8 +139,8 @@ class SeriesRef(object):
    
    #===========================================================================
    def __init__(self, series_key, series_name_s, volume_year_n, publisher_s,
-         issue_count_n, thumb_url_s):
-      ''' 
+         issue_count_n, thumb_url_s, is_collection_b=False):
+      '''
       Initializes a newly created SeriesRef, checking the given parameters to
       make sure they are legal, and then storing them as read-only properties.
       
@@ -167,7 +167,11 @@ class SeriesRef(object):
       thumb_url_s --> the (http) url of an appropriate thumbnail image for this
          comic book series (usually the cover of the first issue.)  if no image
          is available, pass in None here.
-         
+
+      is_collection_b --> whether this series looks like a collected edition
+         (e.g. a hardcover or omnibus gathering issues from an ongoing series)
+         rather than an ordinary issue-by-issue series. defaults to False.
+
       '''
 
       # series_key != None, and must not convert to and empty/whitespace string.
@@ -200,7 +204,9 @@ class SeriesRef(object):
          self.__issue_count_n = max(0, int(issue_count_n))
       except:
          self.__issue_count_n = 0;
-      
+
+      self.__is_collection_b = bool(is_collection_b)
+
       # used only for comparisons
       self._cmpkey_s = sstr(self.series_key)
    
@@ -223,6 +229,10 @@ class SeriesRef(object):
    
    # the number of issues in this series. an int >= 0.
    issue_count_n = property( lambda self : self.__issue_count_n )
+
+   # whether this series looks like a collected edition (hardcover, omnibus,
+   # etc) rather than an ordinary issue-by-issue series. a bool.
+   is_collection_b = property( lambda self : self.__is_collection_b )
 
       
    #===========================================================================

@@ -9,6 +9,30 @@ v1.0.102.
 
 - Double-clicking a row in the issue-selection window now picks that
   issue immediately, the same as selecting it and clicking OK.
+- Added a "Type" column to the series-selection window that tags a result
+  as "Collection" when it looks like a collected edition (hardcover,
+  omnibus, etc) rather than an ordinary issue-by-issue series -- useful
+  for telling apart two same-named series where one of them just
+  reprints another's issues. Comic Vine has no field that says this
+  directly, so it's a best-effort guess based on keywords in the
+  series's name/deck text.
+- The issue-selection window now shows a "Cover Match: N%" line below the
+  cover preview, comparing the comic's own (local) first-page image
+  against whichever Comic Vine cover is currently shown, using the same
+  perceptual-hash comparison the auto-scraper already uses internally.
+  Helps spot a wrong issue/cover pick before scraping. Computed in the
+  background so it never blocks the UI, and updates automatically as you
+  browse alternate covers.
+- Added an "Auto-accept" checkbox (with an editable match-percentage
+  threshold, defaulting to 85%) below the cover match in the
+  issue-selection window: once checked, as soon as a cover's match
+  percentage is known, a 5-second countdown starts towards automatically
+  clicking OK (if the match met the threshold) or Skip (if it didn't) --
+  a middle ground between fully manual and fully automatic scraping. A
+  "Cancel" link next to the countdown stops it; so does picking a
+  different issue or unchecking the box. Both the checkbox and the
+  threshold are remembered for the rest of the current scrape session,
+  so they don't need to be re-set for every book.
 
 ## [1.1.0-ce] - 2026-09-04
 

@@ -23,14 +23,32 @@
   moved to a new "Manual" tab, locked behind an "Enable manual editing"
   checkbox. Done, see CHANGELOG.md [1.1.0-ce].
 
-- [ ] **Detect/flag collection-type entries (TPBs) in series search
-  results**: check whether the Comic Vine API exposes a way to tell that
-  a "series" result is actually a collected edition/compilation of
-  another series (e.g. a trade paperback collecting several single
-  issues, rather than an ongoing series in its own right), so the
-  series-selection window could filter or visually flag those entries
-  -- they currently show up mixed in with regular series with no way to
-  tell them apart at a glance.
+- [x] **Detect/flag collection-type entries (TPBs) in series search
+  results**: Comic Vine has no field that says this directly, so the
+  series-selection window now tags a result as "Collection" (new "Type"
+  column) using a best-effort keyword match (hardcover, omnibus, tpb,
+  trade paperback, collected edition, collects issue(s)) against the
+  series's name/deck text. Done, see CHANGELOG.md [Unreleased].
+
+- [x] **Show a cover-match percentage in the issue-selection window**:
+  compares the comic's own (local) first-page image against whichever
+  Comic Vine cover is currently shown, using the existing perceptual-hash
+  algorithm (`imagehash.py`) the auto-scraper already relies on
+  internally. Done, see CHANGELOG.md [Unreleased].
+
+- [x] **Semi-automatic accept/skip based on cover match**: an "Auto-accept"
+  checkbox (with an editable match-percentage threshold, default 85%)
+  below the cover match in the issue-selection window starts a 5-second
+  countdown as soon as a cover's match is known, ending in an automatic
+  OK (match met the threshold) or Skip (it didn't) unless cancelled --
+  a middle ground between fully manual and fully automatic scraping.
+  Done, see CHANGELOG.md [Unreleased].
+
+- [ ] **Review the Comic Vine API documentation**
+  (https://comicvine.gamespot.com/api/documentation) for anything new
+  this fork could take advantage of -- it was last really gone over long
+  ago (upstream itself hasn't changed since v1.0.102), so there may be
+  new fields, resources, or endpoints worth using.
 
 - [x] **Let the year range be overridden per-search, from the "Search for
   a Comic Book" dialog (`searchform.py`)**: `IGNORE_BEFORE_YEAR`/

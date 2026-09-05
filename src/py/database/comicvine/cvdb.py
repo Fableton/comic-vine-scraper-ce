@@ -229,14 +229,33 @@ def __query_series_refs(search_terms_s, callback_function):
    return set() if cancelled_b[0] else series_refs   
 
    
-# ==========================================================================   
+# ==========================================================================
 def __volume_to_seriesref(volume):
    ''' Converts a cvdb "volume" dom element into a SeriesRef. '''
    publisher = '' if len(volume.publisher.__dict__) <= 1 else \
       volume.publisher.name
-   return SeriesRef( int(volume.id), sstr(volume.name), 
-      sstr(volume.start_year).rstrip("- "), # see bug 334 
-      sstr(publisher), sstr(volume.count_of_issues), __parse_image_url(volume))
+   deck = volume.deck if "deck" in volume.__dict__ and is_string(volume.deck) \
+      else ''
+   return SeriesRef( int(volume.id), sstr(volume.name),
+      sstr(volume.start_year).rstrip("- "), # see bug 334
+      sstr(publisher), sstr(volume.count_of_issues), __parse_image_url(volume),
+      is_collection_b=__is_probable_collection(volume.name, deck))
+
+
+# comic vine has no field that directly identifies a volume as a collected
+# edition (hardcover, omnibus, etc) rather than an ordinary issue-by-issue
+# series -- both are just "volumes" -- so this is a best-effort guess based
+# on keywords commonly found in the name/deck of collected editions.
+__COLLECTION_KEYWORDS_RE = re.compile(
+   r'(?i)\b(hardcover|omnibus|tpb|trade paperback|collected edition|'
+   r'collects issues?)\b')
+
+def __is_probable_collection(name_s, deck_s):
+   ''' Returns True if the given series name/deck look like they describe a
+   collected edition (e.g. a hardcover or omnibus gathering issues from an
+   ongoing series) rather than an ordinary issue-by-issue series. '''
+   return __COLLECTION_KEYWORDS_RE.search(sstr(name_s) + ' ' + sstr(deck_s)) \
+      is not None
 
 
 # ==========================================================================   

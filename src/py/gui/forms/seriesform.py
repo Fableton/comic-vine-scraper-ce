@@ -87,7 +87,7 @@ class SeriesForm(CVForm):
       # is the primary key, the rest are tie-breakers, in order. shift-click
       # on a column header appends/toggles a tie-breaker key; a plain click
       # resets to a single-column sort. defaults to Match score, descending.
-      self.__sort_keys = [(5, False)]
+      self.__sort_keys = [(6, False)]
       # debounces filter textbox changes, so that filtering a table with
       # lots of rows doesn't re-run on every single keystroke
       self.__filter_debounce_timer = Timer()
@@ -256,12 +256,14 @@ class SeriesForm(CVForm):
          if year_s: r.Cells[1].Value = year_s
          r.Cells[2].Value = ref.issue_count_n
          r.Cells[3].Value = ref.publisher_s or ''
-         r.Cells[4].Value = ref.series_key
+         r.Cells[4].Value = i18n.get("SeriesFormCollectionTag") \
+            if ref.is_collection_b else ''
+         r.Cells[5].Value = ref.series_key
          try:
-            r.Cells[5].Value = self.__matchscore.compute_n(self.__book, ref)
+            r.Cells[6].Value = self.__matchscore.compute_n(self.__book, ref)
          except Exception as em:
-            log.debug('SeriesForm: matchscore error %s' % em); r.Cells[5].Value = 0
-         r.Cells[6].Value = model_index
+            log.debug('SeriesForm: matchscore error %s' % em); r.Cells[6].Value = 0
+         r.Cells[7].Value = model_index
       except Exception as e:
          log.debug('SeriesForm: __add_row failed model_index=%s error=%s' % (model_index, e))
 
@@ -329,14 +331,15 @@ class SeriesForm(CVForm):
       table.DefaultCellStyle.NullValue = "--"
       table.Dock = DockStyle.Fill
       table.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize
-      table.ColumnCount = 7
+      table.ColumnCount = 8
       table.Columns[0].Name = i18n.get("SeriesFormSeriesCol"); table.Columns[0].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft; table.Columns[0].Resizable = DataGridViewTriState.True; table.Columns[0].FillWeight = 200; table.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
       table.Columns[1].Name = i18n.get("SeriesFormYearCol"); table.Columns[1].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; table.Columns[1].Resizable = DataGridViewTriState.True; table.Columns[1].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells
       table.Columns[2].Name = i18n.get("SeriesFormIssuesCol"); table.Columns[2].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; table.Columns[2].Resizable = DataGridViewTriState.True; table.Columns[2].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells
       table.Columns[3].Name = i18n.get("SeriesFormPublisherCol"); table.Columns[3].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft; table.Columns[3].Resizable = DataGridViewTriState.True; table.Columns[3].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-      table.Columns[4].Name = "ID"; table.Columns[4].Visible = False
-      table.Columns[5].Name = "Match"; table.Columns[5].Visible = False
-      table.Columns[6].Name = "Model ID"; table.Columns[6].Visible = False
+      table.Columns[4].Name = i18n.get("SeriesFormTypeCol"); table.Columns[4].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; table.Columns[4].Resizable = DataGridViewTriState.True; table.Columns[4].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells
+      table.Columns[5].Name = "ID"; table.Columns[5].Visible = False
+      table.Columns[6].Name = "Match"; table.Columns[6].Visible = False
+      table.Columns[7].Name = "Model ID"; table.Columns[7].Visible = False
       # sorting is handled by us (multi-column, via __header_mouse_clicked),
       # not by the DataGridView's own single-column automatic sort
       for col in table.Columns:
@@ -360,7 +363,7 @@ class SeriesForm(CVForm):
          if args.Button != MouseButtons.Right or args.RowIndex < 0:
             return
          row = self.__table.Rows[args.RowIndex]
-         model_index = row.Cells[6].Value
+         model_index = row.Cells[7].Value
          if model_index is None or not isinstance(model_index, (int, long)) \
                or not (0 <= model_index < len(self.__series_refs)):
             return
@@ -644,7 +647,7 @@ class SeriesForm(CVForm):
       try:
          selected_rows = self.__table.SelectedRows
          if selected_rows.Count == 1:
-            model_id = selected_rows[0].Cells[6].Value if selected_rows[0].Cells.Count > 6 else None
+            model_id = selected_rows[0].Cells[7].Value if selected_rows[0].Cells.Count > 7 else None
             log.debug('SeriesForm: selection changed model_id=%s' % (model_id,))
             if model_id is not None and isinstance(model_id, (int, long)) and 0 <= model_id < len(self.__series_refs):
                self.__chosen_index = model_id
