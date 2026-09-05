@@ -5,7 +5,7 @@ starting from where it diverges from upstream
 [cbanack/comic-vine-scraper](https://github.com/cbanack/comic-vine-scraper)
 v1.0.102.
 
-## [1.1.0-ce] - Unreleased
+## [1.1.0-ce] - 2026-09-04
 
 - Added a "Previous Comic" button to the series-selection window,
   matching the one already in the issue-selection window, so you can go
