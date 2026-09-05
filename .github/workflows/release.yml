@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full tag history for the "Full Changelog" link below
 
       - name: Build .crplugin
         shell: pwsh
@@ -27,8 +29,31 @@ jobs:
           echo "path=$($file.FullName)" >> $env:GITHUB_OUTPUT
           echo "name=$($file.Name)" >> $env:GITHUB_OUTPUT
 
+      - name: Extract changelog section
+        id: changelog
+        shell: pwsh
+        run: |
+          # pull this version's own bullet list out of CHANGELOG.md (e.g. tag
+          # "v1.1.0-ce" -> the "## [1.1.0-ce] - ..." section), instead of
+          # relying on GitHub's generic auto-generated commit-list notes.
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $changelog = Get-Content -Raw CHANGELOG.md
+          $pattern = "(?ms)^## \[$([regex]::Escape($version))\].*?(?=^## \[|\z)"
+          $match = [regex]::Match($changelog, $pattern)
+          if ($match.Success) {
+             $lines = $match.Value -split "`r?`n"
+             $body = ($lines | Select-Object -Skip 1) -join "`n"
+          } else {
+             $body = "_No CHANGELOG.md entry found for $version._"
+          }
+          $previousTag = git describe --tags --abbrev=0 "$env:GITHUB_REF_NAME^" 2>$null
+          if ($previousTag) {
+             $body += "`n`n**Full Changelog**: https://github.com/$env:GITHUB_REPOSITORY/compare/$previousTag...$env:GITHUB_REF_NAME"
+          }
+          $body.Trim() | Set-Content -Path release-notes.md -NoNewline
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ steps.plugin.outputs.path }}
-          generate_release_notes: true
+          body_path: release-notes.md
