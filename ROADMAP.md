@@ -41,3 +41,27 @@
   series-selection window could filter or visually flag those entries
   -- they currently show up mixed in with regular series with no way to
   tell them apart at a glance.
+
+- [ ] **Let the search-terms year range / never-ignore threshold / max
+  results be overridden per-search, from the "Search for a Comic Book"
+  dialog (`searchform.py`), instead of only as permanent global defaults
+  in `ConfigForm`**: these settings (`IGNORE_BEFORE_YEAR`,
+  `IGNORE_AFTER_YEAR`, `NEVER_IGNORE_THRESHOLD`, `MAX_SEARCH_RESULTS`) are
+  often more useful tuned for one particular search than set-and-forgotten
+  globally. The override should apply only to that one search/comic, and
+  should NOT be persisted to disk (same spirit as the existing
+  session-only "Ignore Publisher for this session only" option). Touch
+  points found so far: `SearchForm`/`SearchFormResult`
+  (`gui/forms/searchform.py`) would need new optional fields and to carry
+  the override through its result; `ScrapeEngine.__query_series_refs`
+  (`scrapeengine.py`, around lines 851-867) currently reads
+  `self.config.ignored_before_year_n` / `ignored_after_year_n` /
+  `never_ignore_threshold_n` / `ignored_searchterms_sl` directly and would
+  need optional override parameters instead; `max_search_results_n` is
+  currently applied only once, session-wide, via `db.initialize()`
+  (`scrapeengine.py`, around lines 207-208) -- overriding it per-search
+  would need a deeper look at `db.py`/`cvconnection.py` to see whether a
+  per-call override is even plumbed through there. `scrapeengine.py`'s own
+  comments mark its book-scraping loop "EXTREMELY SUBTLE", so this needs
+  its own careful, dedicated pass rather than being bundled into an
+  unrelated change.

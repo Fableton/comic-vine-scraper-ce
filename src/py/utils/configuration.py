@@ -65,9 +65,9 @@ class Configuration(object):
    __DEFAULT_UI_SCALE = 1.0
 
    # default values for advanced settings
-   __DEFAULT_IGNORED_BEFORE_YEAR = 0
-   __DEFAULT_IGNORED_AFTER_YEAR = 9999999
-   __DEFAULT_NEVER_IGNORE_THRESHOLD = 9999999
+   DEFAULT_IGNORED_BEFORE_YEAR = 0
+   DEFAULT_IGNORED_AFTER_YEAR = 9999999
+   DEFAULT_NEVER_IGNORE_THRESHOLD = 9999999
    __DEFAULT_UPDATE_RATING = False
    __DEFAULT_SHOW_COVERS = True
    __DEFAULT_WELCOME_DIALOG = True 
@@ -171,9 +171,9 @@ class Configuration(object):
       self.__ignored_searchterms_sl = set()
       self.__publisher_aliases_sm = dict()
       self.__user_imprints_sm = dict()
-      self.__ignored_before_year_n = c.__DEFAULT_IGNORED_BEFORE_YEAR
-      self.__ignored_after_year_n = c.__DEFAULT_IGNORED_AFTER_YEAR
-      self.__never_ignore_threshold_n = c.__DEFAULT_NEVER_IGNORE_THRESHOLD
+      self.__ignored_before_year_n = c.DEFAULT_IGNORED_BEFORE_YEAR
+      self.__ignored_after_year_n = c.DEFAULT_IGNORED_AFTER_YEAR
+      self.__never_ignore_threshold_n = c.DEFAULT_NEVER_IGNORE_THRESHOLD
       self.__update_rating_b = c.__DEFAULT_UPDATE_RATING
       self.__show_covers_b = c.__DEFAULT_SHOW_COVERS
       self.__welcome_dialog_b = c.__DEFAULT_WELCOME_DIALOG
@@ -292,6 +292,25 @@ class Configuration(object):
    advanced_settings_s = property( lambda self : self.__advanced_settings_s,
       __set_advanced_settings_s, __set_advanced_settings_s,
       "The advanced settings string for this Configuration. Not None." )
+
+
+   #===========================================================================
+   def replace_advanced_lines(self, key_s, lines_sl):
+      '''
+      Removes every existing "KEY=..." line (case-insensitive) for 'key_s'
+      from this Configuration's advanced settings string, then appends each
+      of 'lines_sl' (already-formatted "KEY=value" strings) in its place, and
+      reparses. Passing [] for 'lines_sl' just removes the key. This lets one
+      dedicated GUI control take full ownership of one advanced setting,
+      while leaving every other setting already in the text (typed manually,
+      or not yet backed by any dedicated control) untouched -- generalizes
+      the same approach add_ignored_publisher/remove_ignored_publisher below
+      already use for IGNORE_PUBLISHER specifically.
+      '''
+      pattern_s = r"(?i)^\s*{0}\s*=".format(re.escape(key_s))
+      remaining_sl = [line_s for line_s in self.__advanced_settings_s.split("\n")
+         if not re.match(pattern_s, line_s.strip())]
+      self.__set_advanced_settings_s("\n".join(remaining_sl + list(lines_sl)))
 
 
    #===========================================================================
@@ -727,15 +746,15 @@ class Configuration(object):
       lines_sl = []
       c = Configuration
       
-      if self.ignored_before_year_n != c.__DEFAULT_IGNORED_BEFORE_YEAR:
+      if self.ignored_before_year_n != c.DEFAULT_IGNORED_BEFORE_YEAR:
          lines_sl.append("Ignore all series that start before {0}.\n"\
              .format(self.ignored_before_year_n))
       
-      if self.ignored_after_year_n != c.__DEFAULT_IGNORED_AFTER_YEAR:
+      if self.ignored_after_year_n != c.DEFAULT_IGNORED_AFTER_YEAR:
          lines_sl.append("Ignore all series that start after {0}.\n"\
             .format(self.ignored_after_year_n))
       
-      if self.never_ignore_threshold_n != c.__DEFAULT_NEVER_IGNORE_THRESHOLD:
+      if self.never_ignore_threshold_n != c.DEFAULT_NEVER_IGNORE_THRESHOLD:
          lines_sl.append("Don't ignore series that have {0} or more issues.\n"\
             .format(self.never_ignore_threshold_n))
       

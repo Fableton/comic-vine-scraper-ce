@@ -39,6 +39,15 @@ v1.0.102.
   attribute '_can_change_page'") that could happen when the
   scraping-progress window tried to redraw its cover image's
   page-turning arrows.
+- Gave the advanced settings (previously only editable as raw text on
+  the "Advanced" tab) their own dedicated controls, across three new/
+  reorganized tabs: "Search Filters" (ignored search terms, year range,
+  never-ignore threshold, max search results), "Publisher Aliases", and
+  a rebuilt "Advanced" tab (the remaining behavior checkboxes, scrape
+  delay, alternate filename regex, and imprint mappings) -- each with an
+  "(i)" button explaining what its settings do. The raw text box is
+  still available on a new "Manual" tab, now locked behind an "Enable
+  manual editing" checkbox to prevent accidental edits.
 
 ## [1.0.102-ce2] - 2026-09-01
 

@@ -3,9 +3,10 @@ This module contains the ConfigForm class (a popup dialog).
 
 @author: Cory Banack
 '''
+import re
 import clr
 import log
-from cvform import CVForm 
+from cvform import CVForm
 from System.Windows.Forms import FormBorderStyle, DockStyle
 from configuration import Configuration, load_known_publishers_sl
 from utils import sstr
@@ -19,11 +20,12 @@ from System.Windows.Forms import AutoScaleMode, Button, CheckBox, ComboBox, \
     DataGridViewAutoSizeColumnMode, DataGridViewButtonColumn, \
     DataGridViewColumnHeadersHeightSizeMode, \
     DataGridViewContentAlignment, DataGridViewSelectionMode, DialogResult, \
-    FlatStyle, Label, MenuItem, RichTextBox, SelectionMode, TabControl, \
+    FlatStyle, Label, MenuItem, MessageBox, MessageBoxButtons, \
+    MessageBoxIcon, NumericUpDown, RichTextBox, SelectionMode, TabControl, \
     TabPage, TextBox, LinkLabel, TableLayoutPanel, TrackBar, TickStyle
 
 clr.AddReference('System.Drawing')
-from System.Drawing import Point, Size, ContentAlignment
+from System.Drawing import Color, Point, Size, ContentAlignment
 
 # =============================================================================
 class ConfigForm(CVForm):
@@ -106,6 +108,51 @@ class ConfigForm(CVForm):
 
       # the table listing all currently-ignored publishers (publishers tab)
       self.__publisher_table = None
+
+      # the "add a search term to ignore" combobox/button/table
+      # (search filters tab)
+      self.__searchterm_combobox = None
+      self.__searchterm_table = None
+
+      # the year-range / never-ignore-threshold / max-results controls
+      # (search filters tab)
+      self.__before_year_cb = None
+      self.__before_year_nud = None
+      self.__after_year_cb = None
+      self.__after_year_nud = None
+      self.__threshold_cb = None
+      self.__threshold_nud = None
+      self.__max_results_nud = None
+
+      # the "add a publisher alias" textboxes and the alias table
+      # (publisher aliases tab)
+      self.__alias_from_tbox = None
+      self.__alias_to_tbox = None
+      self.__alias_table = None
+
+      # the behavior checkboxes, scrape delay, and alt search regex
+      # controls (advanced tab)
+      self.__rating_cb = None
+      self.__show_covers_cb = None
+      self.__welcome_dialog_cb = None
+      self.__ignore_folders_cb = None
+      self.__force_series_art_cb = None
+      self.__note_scrape_date_cb = None
+      self.__scrape_delay_nud = None
+      self.__alt_regex_tbox = None
+      self.__alt_regex_warning_label = None
+
+      # the "add an imprint mapping" textboxes and the imprint table
+      # (advanced tab)
+      self.__imprint_from_tbox = None
+      self.__imprint_to_tbox = None
+      self.__imprint_table = None
+
+      # the "enable manual editing" checkbox that gates the raw advanced
+      # settings textbox (manual tab); always starts unchecked, and is
+      # never persisted to Configuration -- it's a GUI-only safety catch
+      # against accidentally editing that box.
+      self.__manual_enable_cb = None
 
       # the UI scale slider and its "NNN%" label (appearance tab)
       self.__appearance_slider = None
@@ -319,8 +366,11 @@ class ConfigForm(CVForm):
       tabcontrol.Controls.Add( self.__build_behaviourtab() )
       tabcontrol.Controls.Add( self.__build_datatab() )
       tabcontrol.Controls.Add( self.__build_publisherstab() )
+      tabcontrol.Controls.Add( self.__build_searchfilterstab() )
+      tabcontrol.Controls.Add( self.__build_publisheraliasestab() )
       tabcontrol.Controls.Add( self.__build_appearancetab() )
       tabcontrol.Controls.Add( self.__build_advancedtab() )
+      tabcontrol.Controls.Add( self.__build_manualtab() )
       return tabcontrol
 
    
@@ -819,6 +869,376 @@ class ConfigForm(CVForm):
 
 
    # ==========================================================================
+   def __build_info_button(self, info_text_key):
+      ''' builds and returns a small "(i)" button that, when clicked, pops
+      a MessageBox explaining every control on the tab it's placed on
+      (text taken from the i18n key 'info_text_key'). '''
+
+      button = Button()
+      button.Text = i18n.get("ConfigFormInfoButton")
+      button.Dock = DockStyle.Fill
+      button.Click += lambda sender, args: MessageBox.Show(self,
+         i18n.get(info_text_key), i18n.get("ConfigFormInfoTitle"),
+         MessageBoxButtons.OK, MessageBoxIcon.Information)
+      return button
+
+
+   # ==========================================================================
+   def __build_named_list_editor(self, col_header_i18n_key):
+      '''
+      Builds and returns (combobox, add_button, table) for a single-column
+      "type freeform text, click Add, remove via a per-row button" editor
+      -- the same shape as the ignore-list on the Publishers tab (see
+      __build_publisherstab), generalized here so it can be reused for
+      other single-column lists (see also __build_map_list_editor, for
+      two-column name->value lists). The caller is responsible for wiring
+      up 'add_button's Click handler and for storing the returned
+      combobox/table on self.
+      '''
+
+      add_button = Button()
+      add_button.Text = i18n.get("ConfigFormPublishersAdd")
+      add_button.Dock = DockStyle.Fill
+
+      class ListComboBox(ComboBox):
+         def OnKeyPress(self, args):
+            if args.KeyChar == chr(13):
+               add_button.PerformClick()
+               args.Handled = True
+            else:
+               ComboBox.OnKeyPress(self, args)
+      cbox = ListComboBox()
+      cbox.DropDownStyle = ComboBoxStyle.DropDown
+      cbox.Dock = DockStyle.Fill
+
+      table = DataGridView()
+      table.AllowUserToAddRows = False
+      table.AllowUserToResizeRows = False
+      table.RowHeadersVisible = False
+      table.ReadOnly = True
+      table.SelectionMode = DataGridViewSelectionMode.FullRowSelect
+      table.MultiSelect = False
+      table.Dock = DockStyle.Fill
+      table.ColumnHeadersHeightSizeMode = \
+         DataGridViewColumnHeadersHeightSizeMode.AutoSize
+      table.ColumnCount = 2
+      table.Columns[0].Name = i18n.get(col_header_i18n_key)
+      table.Columns[0].DefaultCellStyle.Alignment = \
+         DataGridViewContentAlignment.MiddleLeft
+      table.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+
+      remove_col = DataGridViewButtonColumn()
+      remove_col.Text = i18n.get("ConfigFormPublishersRemove")
+      remove_col.UseColumnTextForButtonValue = True
+      remove_col.Width = guistyle.scale(90, self.__scale_n)
+      table.Columns.RemoveAt(1)
+      table.Columns.Add(remove_col)
+
+      table.CellContentClick += self.__fired_remove_list_row
+      return cbox, add_button, table
+
+
+   # ==========================================================================
+   def __build_map_list_editor(self, from_col_i18n_key, to_col_i18n_key):
+      '''
+      Builds and returns (from_tbox, to_tbox, add_button, table) for a
+      two-column name->value editor (Publisher Aliases, Imprints): two
+      freeform textboxes plus an Add button feed a table with a per-row
+      Remove button. The caller is responsible for wiring up 'add_button's
+      Click handler and for storing the returned textboxes/table on self.
+      '''
+
+      add_button = Button()
+      add_button.Text = i18n.get("ConfigFormPublishersAdd")
+      add_button.Dock = DockStyle.Fill
+
+      from_tbox = TextBox()
+      from_tbox.MaxLength = 50
+      from_tbox.Dock = DockStyle.Fill
+      to_tbox = TextBox()
+      to_tbox.MaxLength = 50
+      to_tbox.Dock = DockStyle.Fill
+
+      table = DataGridView()
+      table.AllowUserToAddRows = False
+      table.AllowUserToResizeRows = False
+      table.RowHeadersVisible = False
+      table.ReadOnly = True
+      table.SelectionMode = DataGridViewSelectionMode.FullRowSelect
+      table.MultiSelect = False
+      table.Dock = DockStyle.Fill
+      table.ColumnHeadersHeightSizeMode = \
+         DataGridViewColumnHeadersHeightSizeMode.AutoSize
+      table.ColumnCount = 3
+      table.Columns[0].Name = i18n.get(from_col_i18n_key)
+      table.Columns[0].DefaultCellStyle.Alignment = \
+         DataGridViewContentAlignment.MiddleLeft
+      table.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+      table.Columns[1].Name = i18n.get(to_col_i18n_key)
+      table.Columns[1].DefaultCellStyle.Alignment = \
+         DataGridViewContentAlignment.MiddleLeft
+      table.Columns[1].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+
+      remove_col = DataGridViewButtonColumn()
+      remove_col.Text = i18n.get("ConfigFormPublishersRemove")
+      remove_col.UseColumnTextForButtonValue = True
+      remove_col.Width = guistyle.scale(90, self.__scale_n)
+      table.Columns.RemoveAt(2)
+      table.Columns.Add(remove_col)
+
+      table.CellContentClick += self.__fired_remove_list_row
+      return from_tbox, to_tbox, add_button, table
+
+
+   # ==========================================================================
+   def __fired_remove_list_row(self, sender, args):
+      ''' called when the user clicks a "Remove" button in any of the
+      search-terms/publisher-aliases/imprints list editors; 'sender' is
+      the DataGridView itself, and the Remove button is always its last
+      column, regardless of whether the table has 1 or 2 data columns. '''
+
+      if args.RowIndex >= 0 and args.ColumnIndex == sender.ColumnCount - 1:
+         sender.Rows.RemoveAt(args.RowIndex)
+
+
+   # ==========================================================================
+   def __fired_add_searchterm(self, sender, args):
+      ''' called when the user clicks the "add search term" button; adds
+      the combobox's current text to the ignore-list table, unless it's
+      blank, not a single alphanumeric word (matching configuration.py's
+      own acceptance rule for IGNORE_SEARCHTERM), or already in the
+      table. '''
+
+      term_s = self.__searchterm_combobox.Text.strip()
+      if not term_s:
+         return
+      if not term_s.isalnum():
+         MessageBox.Show(self, i18n.get("ConfigFormSearchTermsInvalid"),
+            i18n.get("ConfigFormInfoTitle"), MessageBoxButtons.OK,
+            MessageBoxIcon.Warning)
+         return
+      term_lower_s = term_s.lower()
+      for row in self.__searchterm_table.Rows:
+         if sstr(row.Cells[0].Value).lower() == term_lower_s:
+            return # already in the list -- don't add a duplicate
+      self.__searchterm_table.Rows.Add(term_s, None)
+      self.__searchterm_combobox.Text = ""
+
+
+   # ==========================================================================
+   def __fired_add_alias(self, sender, args):
+      ''' called when the user clicks the "add publisher alias" button;
+      adds the current publisher/alias textbox values as a new row, unless
+      either is blank or the publisher is already mapped. '''
+
+      from_s = self.__alias_from_tbox.Text.strip()
+      to_s = self.__alias_to_tbox.Text.strip()
+      if not from_s or not to_s:
+         return
+      from_lower_s = from_s.lower()
+      for row in self.__alias_table.Rows:
+         if sstr(row.Cells[0].Value).lower() == from_lower_s:
+            return # already mapped -- don't add a duplicate
+      self.__alias_table.Rows.Add(from_s, to_s, None)
+      self.__alias_from_tbox.Text = ""
+      self.__alias_to_tbox.Text = ""
+
+
+   # ==========================================================================
+   def __fired_add_imprint(self, sender, args):
+      ''' called when the user clicks the "add imprint mapping" button;
+      adds the current imprint/publisher textbox values as a new row,
+      unless either is blank or the imprint is already mapped. '''
+
+      from_s = self.__imprint_from_tbox.Text.strip()
+      to_s = self.__imprint_to_tbox.Text.strip()
+      if not from_s or not to_s:
+         return
+      from_lower_s = from_s.lower()
+      for row in self.__imprint_table.Rows:
+         if sstr(row.Cells[0].Value).lower() == from_lower_s:
+            return # already mapped -- don't add a duplicate
+      self.__imprint_table.Rows.Add(from_s, to_s, None)
+      self.__imprint_from_tbox.Text = ""
+      self.__imprint_to_tbox.Text = ""
+
+
+   # ==========================================================================
+   def __build_searchfilterstab(self):
+      ''' builds and returns the "Search Filters" Tab for the TabControl '''
+
+      tabpage = TabPage()
+      tabpage.Text = i18n.get("ConfigFormSearchFiltersTab")
+
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 8
+      table_layout.ColumnCount = 2
+      table_layout.Dock = DockStyle.Fill
+      self.__add_scaled_row(table_layout, guistyle.header_row_height)
+      self.__add_scaled_row(table_layout, guistyle.label_row_height)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      self.__add_scaled_row(table_layout,
+         lambda font: guistyle.control_row_height(font) * 4)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.scale(90, self.__scale_n)))
+
+      # 1. --- description label + info button
+      label = Label()
+      label.UseMnemonic = False
+      label.AutoSize = False
+      label.Dock = DockStyle.Fill
+      label.Text = i18n.get("ConfigFormSearchFiltersText")
+      info_button = self.__build_info_button("ConfigFormSearchFiltersInfoText")
+
+      # 2. --- ignored search terms section
+      terms_label = Label()
+      terms_label.UseMnemonic = False
+      terms_label.AutoSize = False
+      terms_label.Dock = DockStyle.Fill
+      terms_label.Text = i18n.get("ConfigFormSearchTermsLabel")
+
+      cbox, add_button, table = \
+         self.__build_named_list_editor("ConfigFormSearchTermsCol")
+      add_button.Click += self.__fired_add_searchterm
+      self.__searchterm_combobox = cbox
+      self.__searchterm_table = table
+
+      # 3. --- before/after year, never-ignore threshold, max results
+      self.__before_year_cb = CheckBox()
+      self.__before_year_cb.FlatStyle = FlatStyle.System
+      self.__before_year_cb.Text = i18n.get("ConfigFormIgnoreBeforeYearCB")
+      self.__before_year_cb.Dock = DockStyle.Fill
+      self.__before_year_cb.CheckedChanged += self.__fired_update_gui
+      self.__before_year_nud = NumericUpDown()
+      self.__before_year_nud.Minimum = 1
+      self.__before_year_nud.Maximum = 9999
+      self.__before_year_nud.Dock = DockStyle.Fill
+
+      self.__after_year_cb = CheckBox()
+      self.__after_year_cb.FlatStyle = FlatStyle.System
+      self.__after_year_cb.Text = i18n.get("ConfigFormIgnoreAfterYearCB")
+      self.__after_year_cb.Dock = DockStyle.Fill
+      self.__after_year_cb.CheckedChanged += self.__fired_update_gui
+      self.__after_year_nud = NumericUpDown()
+      self.__after_year_nud.Minimum = 1
+      self.__after_year_nud.Maximum = 9999
+      self.__after_year_nud.Dock = DockStyle.Fill
+
+      self.__threshold_cb = CheckBox()
+      self.__threshold_cb.FlatStyle = FlatStyle.System
+      self.__threshold_cb.Text = i18n.get("ConfigFormNeverIgnoreThresholdCB")
+      self.__threshold_cb.Dock = DockStyle.Fill
+      self.__threshold_cb.CheckedChanged += self.__fired_update_gui
+      self.__threshold_nud = NumericUpDown()
+      self.__threshold_nud.Minimum = 1
+      self.__threshold_nud.Maximum = 999999
+      self.__threshold_nud.Dock = DockStyle.Fill
+
+      maxresults_label = Label()
+      maxresults_label.UseMnemonic = False
+      maxresults_label.AutoSize = False
+      maxresults_label.Dock = DockStyle.Fill
+      maxresults_label.TextAlign = ContentAlignment.MiddleLeft
+      maxresults_label.Text = i18n.get("ConfigFormMaxSearchResultsLabel")
+      self.__max_results_nud = NumericUpDown()
+      self.__max_results_nud.Minimum = 10
+      self.__max_results_nud.Maximum = 5000
+      self.__max_results_nud.Dock = DockStyle.Fill
+
+      # 4. --- add 'em all to the tabpage
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.Controls.Add(info_button, 1, 0)
+      table_layout.Controls.Add(terms_label, 0, 1)
+      table_layout.SetColumnSpan(terms_label, 2)
+      table_layout.Controls.Add(cbox, 0, 2)
+      table_layout.Controls.Add(add_button, 1, 2)
+      table_layout.Controls.Add(table, 0, 3)
+      table_layout.SetColumnSpan(table, 2)
+      table_layout.Controls.Add(self.__before_year_cb, 0, 4)
+      table_layout.Controls.Add(self.__before_year_nud, 1, 4)
+      table_layout.Controls.Add(self.__after_year_cb, 0, 5)
+      table_layout.Controls.Add(self.__after_year_nud, 1, 5)
+      table_layout.Controls.Add(self.__threshold_cb, 0, 6)
+      table_layout.Controls.Add(self.__threshold_nud, 1, 6)
+      table_layout.Controls.Add(maxresults_label, 0, 7)
+      table_layout.Controls.Add(self.__max_results_nud, 1, 7)
+
+      tabpage.Controls.Add(table_layout)
+      return tabpage
+
+
+   # ==========================================================================
+   def __build_publisheraliasestab(self):
+      ''' builds and returns the "Publisher Aliases" Tab for the
+      TabControl '''
+
+      tabpage = TabPage()
+      tabpage.Text = i18n.get("ConfigFormPublisherAliasesTab")
+
+      label = Label()
+      label.UseMnemonic = False
+      label.AutoSize = False
+      label.Dock = DockStyle.Fill
+      label.Text = i18n.get("ConfigFormPublisherAliasesText")
+
+      from_label = Label()
+      from_label.UseMnemonic = False
+      from_label.AutoSize = False
+      from_label.Dock = DockStyle.Fill
+      from_label.TextAlign = ContentAlignment.MiddleLeft
+      from_label.Text = i18n.get("ConfigFormAliasFromLabel")
+
+      to_label = Label()
+      to_label.UseMnemonic = False
+      to_label.AutoSize = False
+      to_label.Dock = DockStyle.Fill
+      to_label.TextAlign = ContentAlignment.MiddleLeft
+      to_label.Text = i18n.get("ConfigFormAliasToLabel")
+
+      from_tbox, to_tbox, add_button, table = self.__build_map_list_editor(
+         "ConfigFormAliasFromCol", "ConfigFormAliasToCol")
+      add_button.Click += self.__fired_add_alias
+      self.__alias_from_tbox = from_tbox
+      self.__alias_to_tbox = to_tbox
+      self.__alias_table = table
+
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 4
+      table_layout.ColumnCount = 3
+      table_layout.Dock = DockStyle.Fill
+      self.__add_scaled_row(table_layout, guistyle.header_row_height)
+      self.__add_scaled_row(table_layout, guistyle.label_row_height)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 50))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 50))
+      self.__add_scaled_column(table_layout, add_button)
+
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.SetColumnSpan(label, 3)
+      table_layout.Controls.Add(from_label, 0, 1)
+      table_layout.Controls.Add(to_label, 1, 1)
+      table_layout.Controls.Add(from_tbox, 0, 2)
+      table_layout.Controls.Add(to_tbox, 1, 2)
+      table_layout.Controls.Add(add_button, 2, 2)
+      table_layout.Controls.Add(table, 0, 3)
+      table_layout.SetColumnSpan(table, 3)
+
+      tabpage.Controls.Add(table_layout)
+      return tabpage
+
+
+   # ==========================================================================
    def __build_appearancetab(self):
       ''' builds and returns the "Appearance" Tab for the TabControl '''
 
@@ -884,28 +1304,186 @@ class ConfigForm(CVForm):
    # ==========================================================================
    def __build_advancedtab(self):
       ''' builds and returns the "Advanced" Tab for the TabControl '''
-      
+
       tabpage = TabPage()
       tabpage.Text = i18n.get("ConfigFormAdvancedTab")
-      
-      
+
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 15
+      table_layout.ColumnCount = 3
+      table_layout.Dock = DockStyle.Fill
+      self.__add_scaled_row(table_layout, guistyle.header_row_height) # 0
+      for _ in range(6):
+         self.__add_scaled_row(table_layout, guistyle.control_row_height) # 1-6
+      self.__add_scaled_row(table_layout, guistyle.control_row_height) # 7
+      self.__add_scaled_row(table_layout, guistyle.label_row_height) # 8
+      self.__add_scaled_row(table_layout, guistyle.control_row_height) # 9
+      self.__add_scaled_row(table_layout, guistyle.label_row_height) # 10
+      self.__add_scaled_row(table_layout, guistyle.header_row_height) # 11
+      self.__add_scaled_row(table_layout, guistyle.label_row_height) # 12
+      self.__add_scaled_row(table_layout, guistyle.control_row_height) # 13
+      self.__add_scaled_row(table_layout,
+         lambda font: guistyle.control_row_height(font) * 4) # 14
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 50))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 50))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Absolute,
+         guistyle.scale(90, self.__scale_n)))
+
+      # 1. --- description label + info button
+      label = Label()
+      label.UseMnemonic = False
+      label.AutoSize = False
+      label.Dock = DockStyle.Fill
+      label.Text = i18n.get("ConfigFormAdvancedText")
+      info_button = self.__build_info_button("ConfigFormAdvancedInfoText")
+
+      # 2. --- the six behavior checkboxes
+      def build_cb(text_key):
+         cb = CheckBox()
+         cb.FlatStyle = FlatStyle.System
+         cb.Text = i18n.get(text_key)
+         cb.Dock = DockStyle.Fill
+         cb.CheckedChanged += self.__fired_update_gui
+         return cb
+
+      self.__rating_cb = build_cb("ConfigFormRatingCB")
+      self.__show_covers_cb = build_cb("ConfigFormShowCoversCB")
+      self.__welcome_dialog_cb = build_cb("ConfigFormWelcomeDialogCB")
+      self.__ignore_folders_cb = build_cb("ConfigFormIgnoreFoldersCB")
+      self.__force_series_art_cb = build_cb("ConfigFormForceSeriesArtCB")
+      self.__note_scrape_date_cb = build_cb("ConfigFormNoteScrapeDateCB")
+
+      # 3. --- scrape delay
+      scrapedelay_label = Label()
+      scrapedelay_label.UseMnemonic = False
+      scrapedelay_label.AutoSize = False
+      scrapedelay_label.Dock = DockStyle.Fill
+      scrapedelay_label.TextAlign = ContentAlignment.MiddleLeft
+      scrapedelay_label.Text = i18n.get("ConfigFormScrapeDelayLabel")
+      self.__scrape_delay_nud = NumericUpDown()
+      self.__scrape_delay_nud.Minimum = 2 # configuration.py enforces this floor
+      self.__scrape_delay_nud.Maximum = 3600
+      self.__scrape_delay_nud.Dock = DockStyle.Fill
+
+      # 4. --- alternate filename search regex
+      altregex_label = Label()
+      altregex_label.UseMnemonic = False
+      altregex_label.AutoSize = False
+      altregex_label.Dock = DockStyle.Fill
+      altregex_label.Text = i18n.get("ConfigFormAltRegexLabel")
+      self.__alt_regex_tbox = TextBox()
+      self.__alt_regex_tbox.Dock = DockStyle.Fill
+      self.__alt_regex_tbox.TextChanged += self.__fired_update_gui
+      self.__alt_regex_warning_label = Label()
+      self.__alt_regex_warning_label.UseMnemonic = False
+      self.__alt_regex_warning_label.AutoSize = False
+      self.__alt_regex_warning_label.Dock = DockStyle.Fill
+      self.__alt_regex_warning_label.ForeColor = Color.Red
+      self.__alt_regex_warning_label.Text = i18n.get("ConfigFormAltRegexInvalid")
+      self.__alt_regex_warning_label.Visible = False
+
+      # 5. --- imprints
+      imprints_label = Label()
+      imprints_label.UseMnemonic = False
+      imprints_label.AutoSize = False
+      imprints_label.Dock = DockStyle.Fill
+      imprints_label.Text = i18n.get("ConfigFormImprintsText")
+
+      imprint_from_label = Label()
+      imprint_from_label.UseMnemonic = False
+      imprint_from_label.AutoSize = False
+      imprint_from_label.Dock = DockStyle.Fill
+      imprint_from_label.TextAlign = ContentAlignment.MiddleLeft
+      imprint_from_label.Text = i18n.get("ConfigFormImprintFromLabel")
+
+      imprint_to_label = Label()
+      imprint_to_label.UseMnemonic = False
+      imprint_to_label.AutoSize = False
+      imprint_to_label.Dock = DockStyle.Fill
+      imprint_to_label.TextAlign = ContentAlignment.MiddleLeft
+      imprint_to_label.Text = i18n.get("ConfigFormImprintToLabel")
+
+      imprint_from_tbox, imprint_to_tbox, imprint_add_button, imprint_table = \
+         self.__build_map_list_editor(
+            "ConfigFormImprintFromCol", "ConfigFormImprintToCol")
+      imprint_add_button.Click += self.__fired_add_imprint
+      self.__imprint_from_tbox = imprint_from_tbox
+      self.__imprint_to_tbox = imprint_to_tbox
+      self.__imprint_table = imprint_table
+
+      # 6. --- add 'em all to the tabpage
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.SetColumnSpan(label, 2)
+      table_layout.Controls.Add(info_button, 2, 0)
+      table_layout.Controls.Add(self.__rating_cb, 0, 1)
+      table_layout.SetColumnSpan(self.__rating_cb, 3)
+      table_layout.Controls.Add(self.__show_covers_cb, 0, 2)
+      table_layout.SetColumnSpan(self.__show_covers_cb, 3)
+      table_layout.Controls.Add(self.__welcome_dialog_cb, 0, 3)
+      table_layout.SetColumnSpan(self.__welcome_dialog_cb, 3)
+      table_layout.Controls.Add(self.__ignore_folders_cb, 0, 4)
+      table_layout.SetColumnSpan(self.__ignore_folders_cb, 3)
+      table_layout.Controls.Add(self.__force_series_art_cb, 0, 5)
+      table_layout.SetColumnSpan(self.__force_series_art_cb, 3)
+      table_layout.Controls.Add(self.__note_scrape_date_cb, 0, 6)
+      table_layout.SetColumnSpan(self.__note_scrape_date_cb, 3)
+      table_layout.Controls.Add(scrapedelay_label, 0, 7)
+      table_layout.SetColumnSpan(scrapedelay_label, 2)
+      table_layout.Controls.Add(self.__scrape_delay_nud, 2, 7)
+      table_layout.Controls.Add(altregex_label, 0, 8)
+      table_layout.SetColumnSpan(altregex_label, 3)
+      table_layout.Controls.Add(self.__alt_regex_tbox, 0, 9)
+      table_layout.SetColumnSpan(self.__alt_regex_tbox, 3)
+      table_layout.Controls.Add(self.__alt_regex_warning_label, 0, 10)
+      table_layout.SetColumnSpan(self.__alt_regex_warning_label, 3)
+      table_layout.Controls.Add(imprints_label, 0, 11)
+      table_layout.SetColumnSpan(imprints_label, 3)
+      table_layout.Controls.Add(imprint_from_label, 0, 12)
+      table_layout.Controls.Add(imprint_to_label, 1, 12)
+      table_layout.Controls.Add(imprint_from_tbox, 0, 13)
+      table_layout.Controls.Add(imprint_to_tbox, 1, 13)
+      table_layout.Controls.Add(imprint_add_button, 2, 13)
+      table_layout.Controls.Add(imprint_table, 0, 14)
+      table_layout.SetColumnSpan(imprint_table, 3)
+
+      tabpage.Controls.Add(table_layout)
+      return tabpage
+
+
+   # ==========================================================================
+   def __build_manualtab(self):
+      ''' builds and returns the "Manual" Tab for the TabControl -- the
+      raw advanced-settings textbox, gated behind an "enable manual
+      editing" checkbox so it can't be edited by accident. '''
+
+      tabpage = TabPage()
+      tabpage.Text = i18n.get("ConfigFormManualTab")
+
       # 1. --- a description label for this tabpage
       label = Label()
       label.UseMnemonic = False
-      label.AutoSize = True
-      label.Location = Point(14, 25)
-      label.Size = Size(299, 17)
-      label.Text = i18n.get("ConfigFormAdvancedText")
-      
-      
-      # 2. --- build the update checklist (contains all the 'data' checkboxes)
+      label.AutoSize = False
+      label.Dock = DockStyle.Fill
+      label.Text = i18n.get("ConfigFormManualText")
+
+      # 2. --- the "enable manual editing" checkbox; always starts
+      #    unchecked (see __set_configuration), and is never persisted.
+      self.__manual_enable_cb = CheckBox()
+      self.__manual_enable_cb.FlatStyle = FlatStyle.System
+      self.__manual_enable_cb.Text = i18n.get("ConfigFormManualEnableCB")
+      self.__manual_enable_cb.Dock = DockStyle.Fill
+      self.__manual_enable_cb.CheckedChanged += self.__fired_update_gui
+
+      # 3. --- the raw advanced settings textbox itself
       tbox = RichTextBox()
       tbox.Multiline=True
       tbox.MaxLength=65536
       tbox.WordWrap = True
-      tbox.Location = Point(15, 50)
-      tbox.Size = Size(355, 200)
-      
+      tbox.Dock = DockStyle.Fill
+
       menu = ContextMenu()
       items = menu.MenuItems
       items.Add( MenuItem(i18n.get("TextCut"), lambda s, ea : tbox.Cut() ) )
@@ -913,13 +1491,28 @@ class ConfigForm(CVForm):
       items.Add( MenuItem(i18n.get("TextPaste"), lambda s, ea : tbox.Paste() ) )
       tbox.ContextMenu = menu
       self.__advanced_tbox = tbox
-      
-      # 3. --- add 'em all to the tabpage 
-      tabpage.Controls.Add(label)
-      tabpage.Controls.Add(self.__advanced_tbox)
-      
+
+      # 4. --- layout: description, enable checkbox, then the textbox
+      #    filling the rest of the tab
+      table_layout = TableLayoutPanel()
+      table_layout.RowCount = 3
+      table_layout.ColumnCount = 1
+      table_layout.Dock = DockStyle.Fill
+      self.__add_scaled_row(table_layout, guistyle.header_row_height)
+      self.__add_scaled_row(table_layout, guistyle.control_row_height)
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+
+      table_layout.Controls.Add(label, 0, 0)
+      table_layout.Controls.Add(self.__manual_enable_cb, 0, 1)
+      table_layout.Controls.Add(self.__advanced_tbox, 0, 2)
+
+      tabpage.Controls.Add(table_layout)
       return tabpage
-         
+
+
    # ==========================================================================
    def show_form(self):
       '''
@@ -1031,6 +1624,69 @@ class ConfigForm(CVForm):
       # 5. --- and the UI scale factor (appearance tab)
       config.ui_scale_n = self.__appearance_slider.Value / 100.0
 
+      # 6. --- reconcile every other dedicated advanced-setting control
+      #    against the advanced text set in step 3 -- same "dedicated
+      #    control wins" spirit as step 4 above, generalized via
+      #    Configuration.replace_advanced_lines(). A control's key is
+      #    always (re)written from the control's current value; nothing
+      #    here is conditioned on whether that value equals the default.
+
+      # search filters tab
+      searchterm_sl = [sstr(row.Cells[0].Value)
+         for row in self.__searchterm_table.Rows]
+      config.replace_advanced_lines("IGNORE_SEARCHTERM",
+         ["IGNORE_SEARCHTERM={0}".format(t) for t in searchterm_sl])
+
+      config.replace_advanced_lines("IGNORE_BEFORE_YEAR",
+         ["IGNORE_BEFORE_YEAR={0}".format(int(self.__before_year_nud.Value))]
+         if self.__before_year_cb.Checked else [])
+      config.replace_advanced_lines("IGNORE_AFTER_YEAR",
+         ["IGNORE_AFTER_YEAR={0}".format(int(self.__after_year_nud.Value))]
+         if self.__after_year_cb.Checked else [])
+      config.replace_advanced_lines("NEVER_IGNORE_THRESHOLD",
+         ["NEVER_IGNORE_THRESHOLD={0}".format(int(self.__threshold_nud.Value))]
+         if self.__threshold_cb.Checked else [])
+      config.replace_advanced_lines("MAX_SEARCH_RESULTS",
+         ["MAX_SEARCH_RESULTS={0}".format(int(self.__max_results_nud.Value))])
+
+      # publisher aliases tab
+      config.replace_advanced_lines("PUBLISHER_ALIAS",
+         ["PUBLISHER_ALIAS={0}-->{1}".format(
+            sstr(row.Cells[0].Value), sstr(row.Cells[1].Value))
+          for row in self.__alias_table.Rows])
+
+      # advanced tab
+      config.replace_advanced_lines("SCRAPE_RATING",
+         ["SCRAPE_RATING={0}".format(self.__rating_cb.Checked)])
+      config.replace_advanced_lines("SHOW_COVERS",
+         ["SHOW_COVERS={0}".format(self.__show_covers_cb.Checked)])
+      config.replace_advanced_lines("WELCOME_DIALOG",
+         ["WELCOME_DIALOG={0}".format(self.__welcome_dialog_cb.Checked)])
+      config.replace_advanced_lines("IGNORE_FOLDERS",
+         ["IGNORE_FOLDERS={0}".format(self.__ignore_folders_cb.Checked)])
+      config.replace_advanced_lines("FORCE_SERIES_ART",
+         ["FORCE_SERIES_ART={0}".format(self.__force_series_art_cb.Checked)])
+      config.replace_advanced_lines("NOTE_SCRAPE_DATE",
+         ["NOTE_SCRAPE_DATE={0}".format(self.__note_scrape_date_cb.Checked)])
+      config.replace_advanced_lines("SCRAPE_DELAY",
+         ["SCRAPE_DELAY={0}".format(int(self.__scrape_delay_nud.Value))])
+
+      alt_regex_s = self.__alt_regex_tbox.Text.strip()
+      if alt_regex_s:
+         try:
+            re.compile(alt_regex_s)
+            config.replace_advanced_lines("ALT_SEARCH_REGEX",
+               ["ALT_SEARCH_REGEX={0}".format(alt_regex_s)])
+         except:
+            config.replace_advanced_lines("ALT_SEARCH_REGEX", [])
+      else:
+         config.replace_advanced_lines("ALT_SEARCH_REGEX", [])
+
+      config.replace_advanced_lines("IMPRINT",
+         ["IMPRINT={0}-->{1}".format(
+            sstr(row.Cells[0].Value), sstr(row.Cells[1].Value))
+          for row in self.__imprint_table.Rows])
+
       return config
  
  
@@ -1094,6 +1750,56 @@ class ConfigForm(CVForm):
       # 5. --- and the UI scale slider (appearance tab)
       self.__apply_scale(config.ui_scale_n)
 
+      # 6. --- populate every other dedicated advanced-setting control
+      #    directly from Configuration's already-parsed properties (no
+      #    reparsing needed here -- see replace_advanced_lines()).
+
+      # search filters tab
+      self.__searchterm_table.Rows.Clear()
+      for term_s in sorted(config.ignored_searchterms_sl):
+         self.__searchterm_table.Rows.Add(term_s, None)
+
+      self.__before_year_cb.Checked = \
+         config.ignored_before_year_n != Configuration.DEFAULT_IGNORED_BEFORE_YEAR
+      self.__before_year_nud.Value = max(self.__before_year_nud.Minimum,
+         min(self.__before_year_nud.Maximum, config.ignored_before_year_n))
+      self.__after_year_cb.Checked = \
+         config.ignored_after_year_n != Configuration.DEFAULT_IGNORED_AFTER_YEAR
+      self.__after_year_nud.Value = max(self.__after_year_nud.Minimum,
+         min(self.__after_year_nud.Maximum, config.ignored_after_year_n))
+      self.__threshold_cb.Checked = \
+         config.never_ignore_threshold_n != Configuration.DEFAULT_NEVER_IGNORE_THRESHOLD
+      self.__threshold_nud.Value = max(self.__threshold_nud.Minimum,
+         min(self.__threshold_nud.Maximum, config.never_ignore_threshold_n))
+      self.__max_results_nud.Value = max(self.__max_results_nud.Minimum,
+         min(self.__max_results_nud.Maximum, config.max_search_results_n))
+
+      # publisher aliases tab
+      self.__alias_table.Rows.Clear()
+      for pub_s in sorted(config.publisher_aliases_sm.keys()):
+         self.__alias_table.Rows.Add(
+            pub_s, config.publisher_aliases_sm[pub_s], None)
+
+      # advanced tab
+      self.__rating_cb.Checked = config.update_rating_b
+      self.__show_covers_cb.Checked = config.show_covers_b
+      self.__welcome_dialog_cb.Checked = config.welcome_dialog_b
+      self.__ignore_folders_cb.Checked = config.ignore_folders_b
+      self.__force_series_art_cb.Checked = config.force_series_art_b
+      self.__note_scrape_date_cb.Checked = config.note_scrape_date_b
+      self.__scrape_delay_nud.Value = max(self.__scrape_delay_nud.Minimum,
+         min(self.__scrape_delay_nud.Maximum, config.scrape_delay_n))
+      self.__alt_regex_tbox.Text = config.alt_search_regex_s
+
+      self.__imprint_table.Rows.Clear()
+      for imprint_s in sorted(config.user_imprints_sm.keys()):
+         self.__imprint_table.Rows.Add(
+            imprint_s, config.user_imprints_sm[imprint_s], None)
+
+      # manual tab -- always starts locked, regardless of Configuration;
+      # this is a transient GUI safety catch, never a stored preference.
+      self.__manual_enable_cb.Checked = False
+
       self.__fired_update_gui()
       
       
@@ -1121,9 +1827,33 @@ class ConfigForm(CVForm):
          self.__confirm_issue_cb.Checked = False
       self.__confirm_issue_cb.Enabled = not self.__autochoose_series_cb.Checked
       self.__autochoose_series_cb.Enabled = not self.__confirm_issue_cb.Checked
-      
+
+      # search filters tab -- each NumericUpDown is only usable once its
+      # "enable" checkbox is checked (unchecked means "use the default,
+      # i.e. don't filter on this")
+      self.__before_year_nud.Enabled = self.__before_year_cb.Checked
+      self.__after_year_nud.Enabled = self.__after_year_cb.Checked
+      self.__threshold_nud.Enabled = self.__threshold_cb.Checked
+
+      # advanced tab -- show a warning under the alt search regex textbox
+      # if its current text doesn't compile (it would simply be ignored
+      # on Save, same as configuration.py's own silent-ignore behavior)
+      alt_regex_s = self.__alt_regex_tbox.Text.strip()
+      if alt_regex_s:
+         try:
+            re.compile(alt_regex_s)
+            self.__alt_regex_warning_label.Visible = False
+         except:
+            self.__alt_regex_warning_label.Visible = True
+      else:
+         self.__alt_regex_warning_label.Visible = False
+
+      # manual tab -- the raw textbox stays read-only until the user
+      # explicitly opts in, so it can't be edited by accident
+      self.__advanced_tbox.ReadOnly = not self.__manual_enable_cb.Checked
+
       # ok button is disabled if we have no API key
-      self.__ok_button.Enabled = self.__api_key_tbox.Text.strip()      
+      self.__ok_button.Enabled = self.__api_key_tbox.Text.strip()
        
               
    # ==========================================================================
