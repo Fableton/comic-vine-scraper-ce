@@ -48,6 +48,13 @@ v1.0.102.
   "(i)" button explaining what its settings do. The raw text box is
   still available on a new "Manual" tab, now locked behind an "Enable
   manual editing" checkbox to prevent accidental edits.
+- Added a "Don't show this dialog again" checkbox to the Welcome dialog,
+  with a note that it can be turned back on from Settings > Advanced.
+- Added an optional year-range override (checkbox + year field, for
+  "ignore series before/after year") to the "Search for a Comic Book"
+  dialog, so you can narrow a single search without changing your
+  permanent Search Filters default -- the override only applies to that
+  one search and is never saved to disk.
 
 ## [1.0.102-ce2] - 2026-09-01
 

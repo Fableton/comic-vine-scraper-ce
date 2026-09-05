@@ -12,9 +12,10 @@ import utils
 import guistyle
 
 clr.AddReference('System.Windows.Forms')
-from System.Windows.Forms import AutoScaleMode, Button, \
-    DialogResult, Keys, Label, ComboBox, ComboBoxStyle, ContextMenu, \
-    MenuItem, Clipboard, TableLayoutPanel, DockStyle, FormBorderStyle
+from System.Windows.Forms import AutoScaleMode, Button, CheckBox, \
+    DialogResult, FlatStyle, Keys, Label, ComboBox, ComboBoxStyle, \
+    ContextMenu, MenuItem, Clipboard, NumericUpDown, TableLayoutPanel, \
+    DockStyle, FormBorderStyle, ToolTip
 import System # for ColumnStyle/RowStyle/Padding
 
 clr.AddReference('System.Drawing')
@@ -63,6 +64,13 @@ class SearchForm(CVForm):
       # the (editable) search combobox for this form
       self.__combobox = None
 
+      # the "override the year range for this search only" checkboxes and
+      # numeric fields; never persisted -- see show_form().
+      self.__before_year_cb = None
+      self.__before_year_nud = None
+      self.__after_year_cb = None
+      self.__after_year_nud = None
+
       self.__config = scraper.config
 
       CVForm.__init__(self, scraper.comicrack.MainWindow,
@@ -84,13 +92,16 @@ class SearchForm(CVForm):
       self.__combobox = self.__build_combobox(
          failed_search_s if failed_search_s else initial_search_s,
          self.__search_button, self.__cancel_button)
+      self.__build_yearfilter_controls()
 
       # configure this form, and add all gui components to it
       scale_n = self.__config.ui_scale_n
       self.AutoScaleMode = AutoScaleMode.Font
       self.Font = guistyle.scaled_font(self.Font, scale_n)
-      self.ClientSize = Size(450, 280 if self.__fail_label_is_visible else 170)
-      self.MinimumSize = Size(350, 180)
+      yearfilters_height_n = guistyle.control_row_height(self.Font) * 2
+      self.ClientSize = Size(450,
+         (280 if self.__fail_label_is_visible else 170) + yearfilters_height_n)
+      self.MinimumSize = Size(350, 180 + yearfilters_height_n)
       self.Text = i18n.get("SeriesSearchFailedTitle") \
          if self.__fail_label_is_visible else i18n.get("SearchFormTitle")
       self.KeyDown += self.__key_was_pressed
@@ -99,6 +110,8 @@ class SearchForm(CVForm):
       self.__combobox.KeyUp += self.__key_was_released
       self.Deactivate += self.__was_deactivated
 
+      yearfilters_layout = self.__build_yearfilters_layout(scale_n)
+
       # responsive layout using a docked TableLayoutPanel, so every
       # component stretches/repositions itself as the window is resized,
       # instead of sitting at fixed coordinates.
@@ -106,7 +119,7 @@ class SearchForm(CVForm):
       main_layout.ColumnCount = 1
       main_layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
          System.Windows.Forms.SizeType.Percent, 100))
-      main_layout.RowCount = 5
+      main_layout.RowCount = 6
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
          System.Windows.Forms.SizeType.Absolute,
          guistyle.scale(100, scale_n) if self.__fail_label_is_visible else 0))
@@ -116,6 +129,8 @@ class SearchForm(CVForm):
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
          System.Windows.Forms.SizeType.Absolute,
          guistyle.control_row_height(self.__combobox.Font))) # bigger combo font
+      main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, yearfilters_height_n))
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
          System.Windows.Forms.SizeType.Percent, 100)) # spacer, absorbs resize
       main_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
@@ -156,7 +171,8 @@ class SearchForm(CVForm):
       main_layout.Controls.Add(self.__fail_label, 0, 0)
       main_layout.Controls.Add(self.__label, 0, 1)
       main_layout.Controls.Add(self.__combobox, 0, 2)
-      main_layout.Controls.Add(buttons_layout, 0, 4)
+      main_layout.Controls.Add(yearfilters_layout, 0, 3)
+      main_layout.Controls.Add(buttons_layout, 0, 5)
 
       self.Controls.Add(main_layout)
 
@@ -300,6 +316,71 @@ class SearchForm(CVForm):
 
 
    #===========================================================================
+   def __build_yearfilter_controls(self):
+      '''
+      Builds the "override the year range for this search only" checkboxes
+      and numeric fields, and stores them on self. Both checkboxes always
+      start unchecked (this is a fresh, one-off override every time this
+      dialog opens -- see show_form()); each NumericUpDown is pre-filled
+      with the *current* global Settings default (clamped into its
+      widget range the same way ConfigForm.__set_configuration does) just
+      as a sensible starting point if the user checks the box.
+      '''
+
+      def build_row(text_key, config_value_n):
+         checkbox = CheckBox()
+         checkbox.FlatStyle = FlatStyle.System
+         checkbox.Text = i18n.get(text_key)
+         checkbox.Dock = DockStyle.Fill
+         nud = NumericUpDown()
+         nud.Minimum = 1
+         nud.Maximum = 9999
+         nud.Value = max(nud.Minimum, min(nud.Maximum, config_value_n))
+         nud.Enabled = False
+         nud.Dock = DockStyle.Fill
+         checkbox.CheckedChanged += lambda s, ea: setattr(nud, 'Enabled', checkbox.Checked)
+         tip = ToolTip()
+         tip.SetToolTip(checkbox, i18n.get("SearchFormYearFilterHint"))
+         return checkbox, nud
+
+      self.__before_year_cb, self.__before_year_nud = build_row(
+         "SearchFormBeforeYearCB", self.__config.ignored_before_year_n)
+      self.__after_year_cb, self.__after_year_nud = build_row(
+         "SearchFormAfterYearCB", self.__config.ignored_after_year_n)
+
+
+   #===========================================================================
+   def __build_yearfilters_layout(self, scale_n):
+      '''
+      Builds and returns the small 2x2 TableLayoutPanel holding the
+      year-filter checkboxes/numeric fields built by
+      __build_yearfilter_controls() (called earlier, before self.Font was
+      scaled, since these controls need no font-dependent sizing of their
+      own -- only this layout's row/column sizes do).
+      '''
+
+      layout = TableLayoutPanel()
+      layout.RowCount = 2
+      layout.ColumnCount = 2
+      layout.Dock = DockStyle.Fill
+      row_height_n = guistyle.control_row_height(self.Font)
+      layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, row_height_n))
+      layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, row_height_n))
+      layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Percent, 100))
+      layout.ColumnStyles.Add(System.Windows.Forms.ColumnStyle(
+         System.Windows.Forms.SizeType.Absolute, guistyle.scale(90, scale_n)))
+
+      layout.Controls.Add(self.__before_year_cb, 0, 0)
+      layout.Controls.Add(self.__before_year_nud, 1, 0)
+      layout.Controls.Add(self.__after_year_cb, 0, 1)
+      layout.Controls.Add(self.__after_year_nud, 1, 1)
+      return layout
+
+
+   #===========================================================================
    def __load_search_history(self):
       '''
       Returns a list of up to the 20 most recently used search terms (as
@@ -339,7 +420,12 @@ class SearchForm(CVForm):
          search_terms_s = self.__combobox.Text.strip()
          if search_terms_s:
             self.__save_search_history(search_terms_s)
-            return SearchFormResult("SEARCH", search_terms_s)
+            before_year_n = int(self.__before_year_nud.Value) \
+               if self.__before_year_cb.Checked else None
+            after_year_n = int(self.__after_year_nud.Value) \
+               if self.__after_year_cb.Checked else None
+            return SearchFormResult("SEARCH", search_terms_s,
+               before_year_n, after_year_n)
          else:
             return SearchFormResult("CANCEL")
       elif dialogAnswer == DialogResult.Ignore:
@@ -388,47 +474,75 @@ class SearchFormResult(object):
    SKIP = "skip"
    PERMSKIP = "permskip"
    
-   def __init__(self, id, search_terms_s=""):
+   def __init__(self, id, search_terms_s="", before_year_n=None,
+         after_year_n=None):
       '''
       Creates a new SearchFormResult object with the given ID.
-      
-      id -> the result ID.  Must be one of "SEARCH" (proceed with search), 
-            "CANCEL" (cancel entire scrape operation), "SKIP" (skip this book) 
+
+      id -> the result ID.  Must be one of "SEARCH" (proceed with search),
+            "CANCEL" (cancel entire scrape operation), "SKIP" (skip this book)
             or "PERMSKIP" (permanently skip this book)
-            
-      search_terms_s -> the search terms to search on when our ID is "SEARCH". 
+
+      search_terms_s -> the search terms to search on when our ID is "SEARCH".
             This value should be empty for all other IDs.
+
+      before_year_n, after_year_n -> optional one-off overrides (for this
+            search only, never persisted) of the "ignore series before/after
+            year" filters, or None to use the current Settings default.
+            Only meaningful when our ID is "SEARCH".
       '''
       if id != "SEARCH" and id != "CANCEL" and \
             id != "SKIP" and id != "PERMSKIP":
          raise Exception()
-      
+
       search_terms_s = search_terms_s.strip()
       if id=="SEARCH" and not search_terms_s:
          raise Exception()
-      
+
       self.__id = id
       self.__search_terms_s = search_terms_s \
           if id=="SEARCH" and utils.is_string(search_terms_s) else ""
-      
-      
-   #===========================================================================         
+      self.__before_year_n = before_year_n if id=="SEARCH" else None
+      self.__after_year_n = after_year_n if id=="SEARCH" else None
+
+
+   #===========================================================================
    def equals(self, id):
-      ''' 
-      Returns True iff this SearchFormResult has the given ID (i.e. one of 
+      '''
+      Returns True iff this SearchFormResult has the given ID (i.e. one of
       "SEARCH", "CANCEL", "SKIP", or "PERMSKIP".)
       '''
       return self.__id == id
 
-  
-   #===========================================================================         
+
+   #===========================================================================
    def get_search_terms_s(self):
       '''
       Get the series search terms for this SearchFormResult. This value will be
-      non-empty if our id is "SEARCH", and it will be empty ("") otherwise.  
+      non-empty if our id is "SEARCH", and it will be empty ("") otherwise.
       '''
       return self.__search_terms_s
-   
+
+
+   #===========================================================================
+   def get_before_year_override_n(self):
+      '''
+      Gets the one-off "ignore series before year" override for this
+      search, or None if the user didn't set one (use the Settings
+      default). Always None unless our id is "SEARCH".
+      '''
+      return self.__before_year_n
+
+
+   #===========================================================================
+   def get_after_year_override_n(self):
+      '''
+      Gets the one-off "ignore series after year" override for this
+      search, or None if the user didn't set one (use the Settings
+      default). Always None unless our id is "SEARCH".
+      '''
+      return self.__after_year_n
+
    #===========================================================================         
    def get_debug_string(self):
       ''' Gets a simple little debug string summarizing this result.'''

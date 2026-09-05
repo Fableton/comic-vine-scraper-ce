@@ -485,20 +485,25 @@ class ScrapeEngine(object):
       #     METHOD EXIT: if the user cancels or skips from the search dialog.          
       search_terms_s = None
       series_refs = None
-      if key not in scrape_cache: 
+      before_year_override_n = after_year_override_n = None
+      if key not in scrape_cache:
          # get search terms for the book that we're scraping
          search_terms_s = book.series_s
          if manual_search_b or not search_terms_s:
             # show dialog asking the user for the right search terms
             log.debug('asking user for series search terms...')
-            with SearchForm(self, search_terms_s, 
+            with SearchForm(self, search_terms_s,
                   prev_status.get_failed_search_terms_s() ) as search_form:
                search_form_result = search_form.show_form() # blocks
-            log.debug( "...and the user chose to " 
+            log.debug( "...and the user chose to "
                + search_form_result.get_debug_string() )
-            
+
             if search_form_result.equals("SEARCH"):
                search_terms_s = search_form_result.get_search_terms_s()
+               before_year_override_n = \
+                  search_form_result.get_before_year_override_n()
+               after_year_override_n = \
+                  search_form_result.get_after_year_override_n()
             elif search_form_result.equals("CANCEL"):
                self.__cancelled_b = True
                return BookStatus("SKIPPED")
@@ -508,7 +513,8 @@ class ScrapeEngine(object):
                book.skip_forever()
                return BookStatus("SKIPPED")
          # query the database for series_refs that match the search terms
-         series_refs = self.__query_series_refs(search_terms_s)
+         series_refs = self.__query_series_refs(search_terms_s,
+            before_year_override_n, after_year_override_n)
          if self.__cancelled_b: 
             return BookStatus("SKIPPED")
          if not series_refs:
@@ -825,11 +831,17 @@ class ScrapeEngine(object):
 
 
    # ==========================================================================   
-   def __query_series_refs(self, search_terms_s):
+   def __query_series_refs(self, search_terms_s,
+         before_year_override_n=None, after_year_override_n=None):
       '''
       This method queries the online database for a set of SeriesRef objects
-      that match the given (non-empty) search terms.   It will return a set 
+      that match the given (non-empty) search terms.   It will return a set
       of SeriesRefs, which may be empty if no matches could be found.
+
+      'before_year_override_n'/'after_year_override_n' are optional one-off
+      overrides (for this search only) of the "ignore series before/after
+      year" filters, coming from the SearchForm dialog -- pass None (the
+      default) to use self.config's current value, unchanged from before.
       '''
       if not search_terms_s:
          raise Exception("cannot query for empty search terms")
@@ -860,10 +872,15 @@ class ScrapeEngine(object):
             record_known_publisher(series_ref.publisher_s)
 
       # 2. filter out any series that the user has specified
+      before_year_n = before_year_override_n \
+         if before_year_override_n is not None \
+         else self.config.ignored_before_year_n
+      after_year_n = after_year_override_n \
+         if after_year_override_n is not None \
+         else self.config.ignored_after_year_n
       filtered_refs = dbutils.filter_series_refs(series_refs,
          self.config.effective_ignored_publishers_sl,
-         self.config.ignored_before_year_n,
-         self.config.ignored_after_year_n,
+         before_year_n, after_year_n,
          self.config.never_ignore_threshold_n)
       
       # 3. some userful debug output

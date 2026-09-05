@@ -10,11 +10,13 @@ from resources import Resources
 from cvform import CVForm
 from System.Windows.Forms import FormBorderStyle, DockStyle
 from configform import ConfigForm
+from configuration import Configuration
 import guistyle
 import System
 
 clr.AddReference('System.Windows.Forms')
-from System.Windows.Forms import AutoScaleMode, Button, DialogResult, Label, TableLayoutPanel
+from System.Windows.Forms import AutoScaleMode, Button, CheckBox, \
+    DialogResult, FlatStyle, Label, TableLayoutPanel
 
 clr.AddReference('System.Drawing')
 from System.Drawing import Point, Size
@@ -37,6 +39,12 @@ class WelcomeForm(CVForm):
       '''
       
       self.__config = scraper.config
+
+      # the "don't show this dialog again" checkbox; always starts
+      # unchecked (this dialog is only ever shown when WELCOME_DIALOG is
+      # currently true -- see the note in show_form()).
+      self.__dont_show_cb = None
+
       CVForm.__init__(self, scraper.comicrack.MainWindow,
          "welcomeformLocation", "welcomeformSize")
       self.__build_gui(books);
@@ -51,6 +59,7 @@ class WelcomeForm(CVForm):
 
       # 1. --- build each gui component
       label = self.__build_label(books)
+      dont_show_cb = self.__build_dontshowcheckbox()
       ok = self.__build_okbutton()
       settings = self.__build_settingsbutton()
       cancel = self.__build_cancelbutton()
@@ -62,16 +71,22 @@ class WelcomeForm(CVForm):
       self.AutoScaleMode = AutoScaleMode.Font
       self.Font = guistyle.scaled_font(self.Font, scale_n)
       self.Text = Resources.SCRIPT_FULLNAME
-      self.ClientSize = Size(500, 200)
-      self.MinimumSize = Size(400, 160)
+      # the "don't show again" checkbox's text is long enough to wrap onto
+      # two lines, so it gets a double-height row (and the window grows to
+      # match) instead of the usual single-line control_row_height.
+      dont_show_row_height_n = guistyle.control_row_height(self.Font) * 2
+      self.ClientSize = Size(500, 200 + dont_show_row_height_n)
+      self.MinimumSize = Size(400, 160 + dont_show_row_height_n)
 
           # 2. --- create and configure the TableLayoutPanel
       table_layout = TableLayoutPanel()
-      table_layout.RowCount = 2
+      table_layout.RowCount = 3
       table_layout.ColumnCount = 1
       table_layout.Dock = DockStyle.Fill
 
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100))
+      table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
+         System.Windows.Forms.SizeType.Absolute, dont_show_row_height_n))
       table_layout.RowStyles.Add(System.Windows.Forms.RowStyle(
          System.Windows.Forms.SizeType.Absolute,
          guistyle.button_row_height(self.Font)))
@@ -107,13 +122,15 @@ class WelcomeForm(CVForm):
       buttons_layout.Controls.Add(settings, 2, 0)
 
       table_layout.Controls.Add(label, 0, 0)
-      table_layout.Controls.Add(buttons_layout, 0, 1)
-      
+      table_layout.Controls.Add(dont_show_cb, 0, 1)
+      table_layout.Controls.Add(buttons_layout, 0, 2)
+
       # 3. --- define the keyboard focus tab traversal ordering
       ok.TabIndex = 0
       cancel.TabIndex = 1
       label.TabIndex = 2
       settings.TabIndex = 3
+      dont_show_cb.TabIndex = 4
       
       
    # ==========================================================================
@@ -136,6 +153,22 @@ class WelcomeForm(CVForm):
       return label
 
    
+   # ==========================================================================
+   def __build_dontshowcheckbox(self):
+      '''
+      Builds and returns the "don't show this dialog again" checkbox.
+      Always starts unchecked -- see the note in show_form() for why.
+      '''
+
+      checkbox = CheckBox()
+      checkbox.FlatStyle = FlatStyle.System
+      checkbox.AutoSize = False # let its row's height wrap the long text
+      checkbox.Text = i18n.get("WelcomeFormDontShowCB")
+      checkbox.Dock = DockStyle.Fill
+      self.__dont_show_cb = checkbox
+      return checkbox
+
+
    # ==========================================================================
    def __build_okbutton(self):
       ''' Builds and returns the ok button for this form. '''
@@ -185,9 +218,21 @@ class WelcomeForm(CVForm):
       indicating whether the user cancelled the dialog and scrape operation
       (False) or whether the user clicked ok to continue (True).
       '''
-      
+
       dialogAnswer = self.ShowDialog(self.Owner) # blocks
-      return dialogAnswer == DialogResult.OK;      
+      if dialogAnswer == DialogResult.OK and self.__dont_show_cb.Checked:
+         # this dialog is only ever shown when WELCOME_DIALOG is currently
+         # true (see scrapeengine.py), so there's nothing to reconcile --
+         # just turn it off. Reload a fresh Configuration from disk first
+         # (rather than reusing/saving self.__config, which may now be
+         # stale if the user also opened Settings via that button below)
+         # so we don't clobber any changes they made there.
+         fresh_config = Configuration()
+         fresh_config.load_defaults()
+         fresh_config.replace_advanced_lines("WELCOME_DIALOG",
+            ["WELCOME_DIALOG=False"])
+         fresh_config.save_defaults()
+      return dialogAnswer == DialogResult.OK;
       
    # ==========================================================================
    def __show_configform(self, sender, args):
