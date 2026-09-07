@@ -634,7 +634,15 @@ class IssueForm(CVForm):
       ''' this method is called whenever this IssueForm is closed. '''
       self.__filter_debounce_timer.Stop()
       self.__filter_debounce_timer.Dispose()
-      self.__table.Dispose()
+      try:
+         self.__table.Dispose()
+      except Exception:
+         # a known .NET WinForms quirk: disposing a DataGridView while the
+         # mouse cursor is still over it can NullReferenceException deep
+         # inside its own internal mouse-leave bookkeeping
+         # (OnCellDataAreaMouseLeaveInternal) -- harmless here since the
+         # form is already closing, but otherwise uncaught and disruptive.
+         log.debug_exc('IssueForm: table.Dispose() error (WinForms quirk)')
       self.__coverpanel.free()
       self.Closed -= self.__form_closed_fired
 
