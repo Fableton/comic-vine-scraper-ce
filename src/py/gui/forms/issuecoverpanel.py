@@ -17,11 +17,12 @@ import guistyle
 import i18n
 
 clr.AddReference('System.Drawing')
-from System.Drawing import ContentAlignment, Font, FontStyle, Point, Size
+from System.Drawing import ContentAlignment, Font, FontStyle
 
 clr.AddReference('System.Windows.Forms')
 from System.Windows.Forms import Button, CheckBox, Label, NumericUpDown, \
-   Panel, LinkLabel, TextBox, HorizontalAlignment, Keys, Timer, ToolTip
+   Panel, LinkLabel, TextBox, HorizontalAlignment, Keys, Timer, ToolTip, \
+   TableLayoutPanel, RowStyle, ColumnStyle, SizeType, DockStyle
 
 
 
@@ -29,13 +30,11 @@ from System.Windows.Forms import Button, CheckBox, Label, NumericUpDown, \
 #==============================================================================
 class IssueCoverPanel(Panel): 
    '''
-   This panel is a compound gui component for displaying a comic book's issue 
-   or series cover art (in a DBPictureBox), along with a few extra decorations.  
-   (Layout adaptado para redimensionar y usar todo el espacio disponible.)
+   This panel is a compound gui component for displaying a comic book's issue
+   or series cover art (in a DBPictureBox), along with a few extra decorations.
+   Laid out as a single-column grid (see __build_grid) so it resizes cleanly.
    '''
    
-   COMIC_WIDTH_HEIGHT_RATIO = 0.65  # approx (width / height) for a comic cover
-
    # default value for the auto-accept threshold numeric input (the user
    # can change it per-session via the input itself; see
    # __build_auto_accept_threshold_nud)
@@ -134,9 +133,6 @@ class IssueCoverPanel(Panel):
       self.__build_gui()
       if self.__book is not None:
          self.__compute_local_hash()
-      # manejar redimensionamiento dinámico
-      self.Resize += self.__on_resize
-      self.PerformLayout()
 
    # ==========================================================================
    def __build_gui(self):
@@ -144,32 +140,163 @@ class IssueCoverPanel(Panel):
       self.__label = self.__build_label()
       self.__nextbutton = self.__build_nextbutton()
       self.__prevbutton = self.__build_prevbutton()
-      # tamaño inicial (será reajustado)
-      extra_h = guistyle.scale(60, self.__config.ui_scale_n) \
-         if self.__book is not None else 0
-      self.Size = Size(195, (405 if self.__editable_hint_b else 360) + extra_h)
-      self.Controls.Add(self.__coverpanel)
-      self.Controls.Add(self.__prevbutton)
-      self.Controls.Add(self.__label)
-      self.Controls.Add(self.__nextbutton)
       if self.__book is not None:
          self.__match_label = self.__build_match_label()
          self.__auto_accept_checkbox = self.__build_auto_accept_checkbox()
          self.__auto_accept_threshold_nud = self.__build_auto_accept_threshold_nud()
          self.__auto_accept_status_label = self.__build_auto_accept_status_label()
-         self.Controls.Add(self.__match_label)
-         self.Controls.Add(self.__auto_accept_checkbox)
-         self.Controls.Add(self.__auto_accept_threshold_nud)
-         self.Controls.Add(self.__auto_accept_status_label)
       if self.__editable_hint_b:
          self.__hint_textbox, self.__hint_search_button = \
             self.__build_hint_row()
          self.__hint_label = self.__build_hint_label()
-         self.Controls.Add(self.__hint_textbox)
-         self.Controls.Add(self.__hint_search_button)
-         self.Controls.Add(self.__hint_label)
+      # rows whose height (or, for the hint search button's column, width)
+      # depends on self.Font -- built using whatever font is available now
+      # (which, before this panel is parented, is the WRONG, unscaled
+      # default), then corrected once FontChanged fires with the real one.
+      self.__dynamic_styles = []
+      self.__build_grid()
+      self.FontChanged += self.__on_font_changed
       self.set_ref(None)
-      self.__do_layout()
+
+   # ==========================================================================
+   def __build_grid(self):
+      ''' Builds the outer grid stacking (top to bottom): the cover image
+      (filling all remaining space), the prev/caption/next row, and, if
+      applicable, the match-percent label, auto-accept row, auto-accept
+      status label, and editable issue-number hint row + its caption. '''
+      grid = TableLayoutPanel()
+      grid.Dock = DockStyle.Fill
+      grid.ColumnCount = 1
+      grid.ColumnStyles.Add(ColumnStyle(SizeType.Percent, 100))
+      row_n = 0
+
+      grid.RowStyles.Add(RowStyle(SizeType.Percent, 100))
+      grid.Controls.Add(self.__coverpanel, 0, row_n)
+      row_n += 1
+
+      nav_style = RowStyle(SizeType.Absolute, guistyle.button_row_height(self.Font))
+      grid.RowStyles.Add(nav_style)
+      self.__dynamic_styles.append((nav_style, 'button_row'))
+      grid.Controls.Add(self.__build_nav_row(), 0, row_n)
+      row_n += 1
+
+      if self.__book is not None:
+         match_style = RowStyle(SizeType.Absolute,
+            guistyle.label_row_height(self.Font) * 2)
+         grid.RowStyles.Add(match_style)
+         self.__dynamic_styles.append((match_style, 'label2_row'))
+         grid.Controls.Add(self.__match_label, 0, row_n)
+         row_n += 1
+
+         auto_style = RowStyle(SizeType.Absolute,
+            guistyle.control_row_height(self.Font))
+         grid.RowStyles.Add(auto_style)
+         self.__dynamic_styles.append((auto_style, 'control_row'))
+         grid.Controls.Add(self.__build_auto_accept_row(), 0, row_n)
+         row_n += 1
+
+         status_style = RowStyle(SizeType.Absolute,
+            guistyle.label_row_height(self.Font) * 2)
+         grid.RowStyles.Add(status_style)
+         self.__dynamic_styles.append((status_style, 'label2_row'))
+         grid.Controls.Add(self.__auto_accept_status_label, 0, row_n)
+         row_n += 1
+
+      if self.__editable_hint_b:
+         hint_style = RowStyle(SizeType.Absolute,
+            guistyle.control_row_height(self.Font))
+         grid.RowStyles.Add(hint_style)
+         self.__dynamic_styles.append((hint_style, 'control_row'))
+         grid.Controls.Add(self.__build_hint_row_panel(), 0, row_n)
+         row_n += 1
+
+         hint_label_style = RowStyle(SizeType.Absolute,
+            guistyle.label_row_height(self.Font))
+         grid.RowStyles.Add(hint_label_style)
+         self.__dynamic_styles.append((hint_label_style, 'label1_row'))
+         grid.Controls.Add(self.__hint_label, 0, row_n)
+         row_n += 1
+
+      grid.RowCount = row_n
+      self.Controls.Add(grid)
+
+   # ==========================================================================
+   def __build_nav_row(self):
+      ''' Builds the small grid holding the prev button, caption label, and
+      next button side by side. '''
+      row = TableLayoutPanel()
+      row.Dock = DockStyle.Fill
+      row.RowCount = 1
+      row.ColumnCount = 3
+      row.RowStyles.Add(RowStyle(SizeType.Percent, 100))
+      btn_w = guistyle.scale(32, self.__config.ui_scale_n)
+      row.ColumnStyles.Add(ColumnStyle(SizeType.Absolute, btn_w))
+      row.ColumnStyles.Add(ColumnStyle(SizeType.Percent, 100))
+      row.ColumnStyles.Add(ColumnStyle(SizeType.Absolute, btn_w))
+      row.Controls.Add(self.__prevbutton, 0, 0)
+      row.Controls.Add(self.__label, 1, 0)
+      row.Controls.Add(self.__nextbutton, 2, 0)
+      return row
+
+   # ==========================================================================
+   def __build_auto_accept_row(self):
+      ''' Builds the small grid holding the auto-accept checkbox and its
+      threshold input side by side. '''
+      row = TableLayoutPanel()
+      row.Dock = DockStyle.Fill
+      row.RowCount = 1
+      row.ColumnCount = 2
+      row.RowStyles.Add(RowStyle(SizeType.Percent, 100))
+      nud_w = guistyle.scale(50, self.__config.ui_scale_n)
+      row.ColumnStyles.Add(ColumnStyle(SizeType.Percent, 100))
+      row.ColumnStyles.Add(ColumnStyle(SizeType.Absolute, nud_w))
+      row.Controls.Add(self.__auto_accept_checkbox, 0, 0)
+      row.Controls.Add(self.__auto_accept_threshold_nud, 1, 0)
+      return row
+
+   # ==========================================================================
+   def __build_hint_row_panel(self):
+      ''' Builds the small grid holding the issue-number hint textbox and
+      its search button side by side. '''
+      row = TableLayoutPanel()
+      row.Dock = DockStyle.Fill
+      row.RowCount = 1
+      row.ColumnCount = 2
+      row.RowStyles.Add(RowStyle(SizeType.Percent, 100))
+      row.ColumnStyles.Add(ColumnStyle(SizeType.Percent, 100))
+      btn_col_style = ColumnStyle(SizeType.Absolute,
+         guistyle.button_column_width(self.__hint_search_button.Text, self.Font))
+      row.ColumnStyles.Add(btn_col_style)
+      self.__dynamic_styles.append((btn_col_style, 'hint_btn_col'))
+      row.Controls.Add(self.__hint_textbox, 0, 0)
+      row.Controls.Add(self.__hint_search_button, 1, 0)
+      return row
+
+   # ==========================================================================
+   def __update_dynamic_sizes(self):
+      ''' Recomputes every row height/column width in __dynamic_styles
+      against the current (real) self.Font. '''
+      font = self.Font
+      for style_obj, kind_s in self.__dynamic_styles:
+         if kind_s == 'button_row':
+            style_obj.Height = guistyle.button_row_height(font)
+         elif kind_s == 'control_row':
+            style_obj.Height = guistyle.control_row_height(font)
+         elif kind_s == 'label1_row':
+            style_obj.Height = guistyle.label_row_height(font)
+         elif kind_s == 'label2_row':
+            style_obj.Height = guistyle.label_row_height(font) * 2
+         elif kind_s == 'hint_btn_col':
+            style_obj.Width = guistyle.button_column_width(
+               self.__hint_search_button.Text, font)
+
+   # ==========================================================================
+   def __on_font_changed(self, sender, args):
+      ''' self.Font at __build_grid() time is whatever default font this
+      panel has BEFORE it's parented -- not the real, scaled font it ends
+      up with. Once that real font is known (this fires when it changes),
+      fix up the row/column sizes that were computed from it. '''
+      self.__update_dynamic_sizes()
 
    # ==========================================================================
    def __build_hint_row(self):
@@ -181,6 +308,7 @@ class IssueCoverPanel(Panel):
       for anyone who wouldn't think to try Enter.
       '''
       tbox = TextBox()
+      tbox.Dock = DockStyle.Fill
       tbox.Visible = self.__config.show_covers_b
       tbox.TextAlign = HorizontalAlignment.Center
       if utils.is_string(self.__issue_num_hint_s):
@@ -199,6 +327,7 @@ class IssueCoverPanel(Panel):
       tbox.Leave += lost_focus
 
       button = Button()
+      button.Dock = DockStyle.Fill
       button.Visible = self.__config.show_covers_b
       button.Text = i18n.get("IssueCoverPanelHintSearch")
       button.UseVisualStyleBackColor = True
@@ -215,6 +344,7 @@ class IssueCoverPanel(Panel):
       issue-number hint textbox+button, explaining what they're for. '''
       label = Label()
       label.Visible = self.__config.show_covers_b
+      label.Dock = DockStyle.Fill
       label.UseMnemonic = False
       label.TextAlign = ContentAlignment.MiddleCenter
       label.Text = i18n.get("IssueCoverPanelHintLabel")
@@ -223,18 +353,16 @@ class IssueCoverPanel(Panel):
    # ==========================================================================
    def __build_coverimage(self):
       cover = DBPictureBox()
-      cover.Location = Point(0, 0)
-      cover.Size = Size(195, 320)
+      cover.Dock = DockStyle.Fill
       cover.Visible = self.__config.show_covers_b
       return cover
-   
+
    # ==========================================================================
    def __build_label(self):
       label = LinkLabel()
       label.UseMnemonic = False
       label.Visible = self.__config.show_covers_b
-      label.Location = Point(18, 326)
-      label.Size = Size(155,36)
+      label.Dock = DockStyle.Fill
       label.TextAlign = ContentAlignment.MiddleCenter
       def link_clicked(sender, args):
          if self.__link_callback:
@@ -251,6 +379,7 @@ class IssueCoverPanel(Panel):
       label.UseMnemonic = False
       label.AutoSize = False
       label.Visible = self.__config.show_covers_b
+      label.Dock = DockStyle.Fill
       label.TextAlign = ContentAlignment.MiddleCenter
       return label
 
@@ -261,7 +390,11 @@ class IssueCoverPanel(Panel):
       across every book in this scrape session (not just this one
       dialog), but resets the next time ComicRack is restarted. '''
       checkbox = CheckBox()
-      checkbox.AutoSize = True
+      # AutoSize=True silently ignores Dock=Fill (the checkbox would just
+      # size itself to its own text); this row needs it to fill its cell.
+      checkbox.AutoSize = False
+      checkbox.Dock = DockStyle.Fill
+      checkbox.TextAlign = ContentAlignment.MiddleLeft
       checkbox.Visible = self.__config.show_covers_b
       checkbox.Text = i18n.get("IssueCoverPanelAutoAcceptCheckbox")
       checkbox.Checked = bool(self.__config.session_data_map.get(
@@ -277,6 +410,7 @@ class IssueCoverPanel(Panel):
       input. its value is remembered the same way (and for the same
       reason) as the auto-accept checkbox's checked state, above. '''
       nud = NumericUpDown()
+      nud.Dock = DockStyle.Fill
       nud.Visible = self.__config.show_covers_b
       nud.Minimum = 1
       nud.Maximum = 100
@@ -297,6 +431,7 @@ class IssueCoverPanel(Panel):
       label.UseMnemonic = False
       label.AutoSize = False
       label.Visible = self.__config.show_covers_b
+      label.Dock = DockStyle.Fill
       label.TextAlign = ContentAlignment.MiddleCenter
       label.LinkClicked += self.__auto_accept_cancel_clicked_fired
       return label
@@ -304,136 +439,23 @@ class IssueCoverPanel(Panel):
    # ==========================================================================
    def __build_nextbutton(self):
       button = Button()
-      button.Location = Point(173, 332)
-      button.Size = Size(20, 24)
+      button.Dock = DockStyle.Fill
       button.Text = '>'
       button.Font = Font(button.Font, FontStyle.Bold)
       button.UseVisualStyleBackColor = True
       button.Click += self.__button_click_fired
       return button
-   
+
    # ==========================================================================
    def __build_prevbutton(self):
       button = Button()
-      button.Location = Point(2, 332)
-      button.Size = Size(20, 24)
+      button.Dock = DockStyle.Fill
       button.Text = '<'
       button.Font = Font(button.Font, FontStyle.Bold)
       button.UseVisualStyleBackColor = True
       button.Click += self.__button_click_fired
       return button
 
-   # ==========================================================================
-   def __on_resize(self, sender, args):
-      self.__do_layout()
-
-   # ==========================================================================
-   def __do_layout(self):
-      if not self.__config.show_covers_b:
-         return
-      try:
-         scale_n = self.__config.ui_scale_n
-         padding = guistyle.scale(4, scale_n)
-         label_height = guistyle.scale(36, scale_n)
-         btn_h = guistyle.scale(26, scale_n)
-         btn_w = guistyle.scale(32, scale_n)
-         hint_h = guistyle.scale(24, scale_n) if self.__editable_hint_b else 0
-         hint_label_h = guistyle.scale(18, scale_n) if self.__editable_hint_b else 0
-         # 2 lines' worth -- "Cover Match: NN%"/"Comparing covers..." can
-         # wrap onto a second line in a narrow column or at a large ui
-         # scale, and both lines need to stay visible when that happens
-         match_h = guistyle.label_row_height(self.Font) * 2 \
-            if self.__match_label is not None else 0
-         # row for the auto-accept checkbox + threshold input
-         auto_accept_h = guistyle.control_row_height(self.Font) \
-            if self.__auto_accept_checkbox is not None else 0
-         # 2 lines' worth, same reasoning as match_h above -- the
-         # accept/skip countdown text plus its "Cancel" link can wrap
-         auto_accept_status_h = guistyle.label_row_height(self.Font) * 2 \
-            if self.__auto_accept_status_label is not None else 0
-         w = self.ClientSize.Width
-         h = self.ClientSize.Height
-         if w <= 0 or h <= 0:
-            return
-         # espacio disponible para la imagen (restando label/botones/hint)
-         hint_block_h = (hint_h + hint_label_h + padding*2) if hint_h else 0
-         match_block_h = (match_h + padding) if match_h else 0
-         auto_accept_block_h = (auto_accept_h + padding) if auto_accept_h else 0
-         auto_accept_status_block_h = \
-            (auto_accept_status_h + padding) if auto_accept_status_h else 0
-         reserved_h = btn_h + padding*2 + match_block_h + \
-            auto_accept_block_h + auto_accept_status_block_h + hint_block_h
-         avail_height = max(10, h - reserved_h)
-         avail_width = w
-         # mantener aspect ratio W/H ~ 0.65 => H = W / 0.65
-         desired_height_from_width = int(avail_width / self.COMIC_WIDTH_HEIGHT_RATIO)
-         if desired_height_from_width > avail_height:
-            # limitar por altura
-            cover_height = avail_height
-            cover_width = int(cover_height * self.COMIC_WIDTH_HEIGHT_RATIO)
-         else:
-            cover_width = avail_width
-            cover_height = desired_height_from_width
-         # centrar horizontalmente
-         cover_x = (w - cover_width)//2
-         self.__coverpanel.Location = Point(cover_x, 0)
-         self.__coverpanel.Size = Size(cover_width, cover_height)
-         # posicionar botones y label debajo ajustando ancho label
-         btn_y = cover_height + padding
-         self.__prevbutton.Size = Size(btn_w, btn_h)
-         self.__nextbutton.Size = Size(btn_w, btn_h)
-         self.__prevbutton.Location = Point(padding, btn_y)
-         self.__nextbutton.Location = Point(w - btn_w - padding, btn_y)
-         label_x = self.__prevbutton.Right + padding
-         label_w = max(20, self.__nextbutton.Left - padding - label_x)
-         self.__label.Location = Point(label_x, btn_y)
-         self.__label.Size = Size(label_w, btn_h)
-         next_y = btn_y + btn_h
-         if self.__match_label is not None:
-            next_y += padding
-            self.__match_label.Location = Point(padding, next_y)
-            self.__match_label.Size = Size(max(20, w - padding*2), match_h)
-            next_y += match_h
-         if self.__auto_accept_checkbox is not None:
-            next_y += padding
-            nud_w = guistyle.scale(50, scale_n)
-            nud_x = w - padding - nud_w
-            self.__auto_accept_threshold_nud.Location = Point(nud_x, next_y)
-            self.__auto_accept_threshold_nud.Size = Size(nud_w, auto_accept_h)
-            cb_x = padding
-            cb_w = max(20, nud_x - padding - cb_x)
-            self.__auto_accept_checkbox.Location = Point(cb_x, next_y)
-            self.__auto_accept_checkbox.Size = Size(cb_w, auto_accept_h)
-            next_y += auto_accept_h
-         if self.__auto_accept_status_label is not None:
-            next_y += padding
-            self.__auto_accept_status_label.Location = Point(padding, next_y)
-            self.__auto_accept_status_label.Size = \
-               Size(max(20, w - padding*2), auto_accept_status_h)
-            next_y += auto_accept_status_h
-         if self.__editable_hint_b and self.__hint_textbox is not None:
-            hint_y = next_y + padding
-            # size the button to whatever its own text/font actually need
-            # (plus a little breathing room), instead of a fixed pixel cap
-            # that doesn't necessarily fit "Search" at every font size.
-            min_btn_w = guistyle.scale(36, scale_n)
-            preferred_btn_w = self.__hint_search_button.PreferredSize.Width \
-               + guistyle.scale(8, scale_n)
-            search_btn_w = max(min_btn_w, min(preferred_btn_w, int(w * 0.5)))
-            hint_tbox_w = max(20, w - padding*3 - search_btn_w)
-            self.__hint_textbox.Location = Point(padding, hint_y)
-            self.__hint_textbox.Size = Size(hint_tbox_w, hint_h)
-            self.__hint_search_button.Location = \
-               Point(padding*2 + hint_tbox_w, hint_y)
-            self.__hint_search_button.Size = Size(search_btn_w, hint_h)
-            if self.__hint_label is not None:
-               label_y = hint_y + hint_h + padding
-               self.__hint_label.Location = Point(padding, label_y)
-               self.__hint_label.Size = \
-                  Size(max(20, w - padding*2), hint_label_h)
-      except Exception:
-         pass
-      
    # ==========================================================================
    def free(self):
       if self.__book is not None:
@@ -591,7 +613,6 @@ class IssueCoverPanel(Panel):
                   self.__update()
                utils.invoke(self, update_bmodel, True)
             scheduler.submit(update_cache)
-      self.__do_layout()
 
    # ==========================================================================
    def __compute_local_hash(self):

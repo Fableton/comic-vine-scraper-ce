@@ -74,7 +74,9 @@ class DBPictureBox(PictureBox):
          if self.Visible: self.__update_image()
          
       self.VisibleChanged += visibility_changed
-      self.SizeMode = PictureBoxSizeMode.StretchImage
+      # Zoom preserves the cover's aspect ratio (letterboxing as needed)
+      # instead of stretching it to fill whatever size the box is given.
+      self.SizeMode = PictureBoxSizeMode.Zoom
       self.set_image_ref(None)
 
 
