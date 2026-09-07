@@ -5,6 +5,51 @@ starting from where it diverges from upstream
 [cbanack/comic-vine-scraper](https://github.com/cbanack/comic-vine-scraper)
 v1.0.102.
 
+## [Unreleased - beta, not yet on master]
+
+This section covers a beta branch only (auto-accept for the
+series-selection window) -- still being stress-tested before merging
+into master, since earlier rounds of it caused real hangs. Not part of
+any release yet.
+
+- Extended "Auto-accept" (see below) to the series-selection window: a
+  candidate series only ever gets compared once it actually resolves to
+  a real issue for the book (never against a series' own generic cover
+  art, which wouldn't mean anything); if a candidate's match doesn't
+  meet the threshold, or doesn't resolve to an issue at all, auto-accept
+  tries up to 4 more candidates (by whatever order the table is
+  currently sorted in) before giving up and skipping the book. The
+  checkbox and threshold are shared with the issue-selection window's
+  existing auto-accept, and remembered across both for the rest of the
+  scrape session.
+  - While cycling between candidates, the countdown reads "Jumping in
+    Ns..." instead of "Skipping in Ns..." unless rejecting the current
+    one would actually skip the book (the last candidate allowed) --
+    "Skipping" now specifically means "this book", not "this candidate".
+- Fixed a real deadlock behind "hangs while scraping" reports: writing a
+  debug-log line held an internal lock for the whole duration of the
+  (synchronous, cross-thread) write to ComicRack's script console --
+  but that write has to wait for the app's main thread to be free, and
+  if that thread happened to be logging something of its own at that
+  exact moment, it would block trying to acquire the very same lock the
+  other thread already held. A second, deeper layer of the same problem
+  turned up after that first fix: IronPython's own file-write
+  implementation has its OWN internal lock around every write to the
+  script console, entirely outside this plugin's control, with the
+  exact same hazard. The real fix: a background thread never writes to
+  the console directly anymore -- it always hands the write to the main
+  thread asynchronously (never blocking on it), so only the main
+  thread's own single thread ever touches that stream, and the internal
+  lock is never contended across threads at all.
+- Fixed the cover-match percentage sometimes getting stuck forever on
+  "Comparing covers...": the local hash computation's background task
+  ends by invoking back onto the cover panel itself, but that panel
+  doesn't have a window handle yet at the moment the task is kicked off
+  (during its own construction, before it's added to the dialog) --  a
+  handle-less invoke is silently dropped by design (meant for an
+  already-closed dialog, not a not-yet-opened one). Now waits for the
+  panel's HandleCreated event before starting that computation.
+
 ## [Unreleased]
 
 - Added a dev-only debug aid (not user-facing): pressing Ctrl+Shift+G in

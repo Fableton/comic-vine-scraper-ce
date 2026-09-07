@@ -45,7 +45,8 @@ class IssueCoverPanel(Panel):
 
    #===========================================================================
    def __init__(self, config, issue_num_hint_s=None, editable_hint_b=False,
-         book=None, on_auto_accept=None, on_auto_skip=None):
+         book=None, on_auto_accept=None, on_auto_skip=None,
+         on_unresolved=None, is_final_candidate=None):
       '''
       'editable_hint_b' -> when True, this panel also shows a small textbox
       below the cover (pre-filled with issue_num_hint_s) that lets the user
@@ -56,14 +57,32 @@ class IssueCoverPanel(Panel):
       'book' -> if given, the local ComicBook being scraped. when present,
       this panel compares that book's own (local) cover against whichever
       remote cover is currently displayed, and shows a match percentage
-      below it, plus an "Auto-accept" checkbox + threshold input: once
-      checked, every time a match result becomes known for the cover
-      currently on screen, a countdown starts that ends by calling
+      below it. If 'book' is None, none of this (percentage, or any of the
+      auto-accept behavior below) is ever shown/used.
+
+      'on_auto_accept'/'on_auto_skip' -> if either is given (requires
+      'book'), this panel also shows an "Auto-accept" checkbox + threshold
+      input: once checked, every time a match result becomes known for the
+      cover currently on screen, a countdown starts that ends by calling
       'on_auto_accept' (if the match met the threshold) or 'on_auto_skip'
       (if it didn't) -- unless cancelled first (by picking a different
       issue, unchecking the box, or clicking the countdown's "Cancel"
-      link). Both callbacks take no arguments. If 'book' is None, none of
-      this (percentage, checkbox, or callbacks) is ever shown/used.
+      link). Both callbacks take no arguments.
+
+      'on_unresolved' -> only meaningful when set_ref() is given a
+      SeriesRef alongside an issue-number hint (see set_ref()): called
+      (no arguments) if auto-accept is checked and that SeriesRef never
+      resolves to a real issue -- comparing a candidate series' own,
+      generic cover wouldn't mean anything, so this is the caller's cue to
+      move on to a different candidate instead of waiting for a countdown
+      that will never start.
+
+      'is_final_candidate' -> only meaningful together with 'on_auto_skip'.
+      Called (no arguments) right before arming a "reject" countdown, to
+      decide its wording: if it returns true (or is omitted), the countdown
+      reads "Skipping..." (rejecting this one skips the book/whatever is
+      being decided); if it returns false, it reads "Jumping..." instead
+      (there's still another candidate left to try).
       '''
       self.__config = config
       self.__issue_num_hint_s = issue_num_hint_s
@@ -75,6 +94,8 @@ class IssueCoverPanel(Panel):
       self.__book = book
       self.__on_auto_accept = on_auto_accept
       self.__on_auto_skip = on_auto_skip
+      self.__on_unresolved = on_unresolved
+      self.__is_final_candidate = is_final_candidate
       # the auto-accept checkbox/threshold/countdown controls only make
       # sense (and are only built) if the caller actually wants to act on
       # them -- a caller that only wants the match label (status + %) but
@@ -94,6 +115,10 @@ class IssueCoverPanel(Panel):
       # what the current countdown will do once it reaches 0: True to
       # click OK, False to click Skip
       self.__auto_accept_will_accept_b = False
+      # only meaningful when __auto_accept_will_accept_b is False: whether
+      # rejecting the current candidate is the last one to try (wording:
+      # "Skipping...") or just moves on to another one ("Jumping...")
+      self.__auto_accept_reject_is_final_b = True
       self.__auto_accept_seconds_left_n = 0
       self.__auto_accept_timer = Timer()
       self.__auto_accept_timer.Interval = 1000
@@ -137,8 +162,17 @@ class IssueCoverPanel(Panel):
       self.__alt_cover_choice = None
       Panel.__init__(self)
       self.__build_gui()
+      # __compute_local_hash's background task ends by invoking back onto
+      # this panel's own handle (see its 'apply' closure) -- but at this
+      # point (still inside the constructor) this panel hasn't been added
+      # to its parent form yet, so it has no handle. Waiting for
+      # HandleCreated guarantees one exists by the time that invoke runs,
+      # instead of utils.invoke() silently dropping it (its documented
+      # behavior for "no handle", meant for an already-closed form, not
+      # this not-yet-parented case).
+      self.__local_hash_started_b = False
       if self.__book is not None:
-         self.__compute_local_hash()
+         self.HandleCreated += self.__start_local_hash_once
 
    # ==========================================================================
    def __build_gui(self):
@@ -189,9 +223,9 @@ class IssueCoverPanel(Panel):
 
       if self.__book is not None:
          match_style = RowStyle(SizeType.Absolute,
-            guistyle.label_row_height(self.Font) * 2)
+            guistyle.label_row_height(self.Font))
          grid.RowStyles.Add(match_style)
-         self.__dynamic_styles.append((match_style, 'label2_row'))
+         self.__dynamic_styles.append((match_style, 'label1_row'))
          grid.Controls.Add(self.__match_label, 0, row_n)
          row_n += 1
 
@@ -504,13 +538,31 @@ class IssueCoverPanel(Panel):
          self.__series_ref = ref
       run_in_background = type(ref) == SeriesRef and self.__issue_num_hint_s
       if run_in_background:
+         # a candidate that hasn't been looked up before is a real,
+         # rate-limited network call that can take a few seconds -- without
+         # this, the match label would keep showing whatever the PREVIOUS
+         # candidate left behind, making auto-accept's cycling look stuck.
+         self.__cancel_auto_accept()
+         if self.__match_label is not None and ref not in self.__series_cache:
+            self.__match_label.Text = i18n.get("IssueCoverPanelResolvingIssue")
          def maybe_convert_seriesref_to_issue_ref(ref):
             if not ref in self.__series_cache:
-               issue_ref = db.query_issue_ref(ref, self.__issue_num_hint_s)
+               issue_ref = None
+               try:
+                  issue_ref = db.query_issue_ref(ref, self.__issue_num_hint_s)
+               except Exception:
+                  # let a lookup failure (e.g. a rate limit) act the same as
+                  # "didn't resolve" instead of escaping uncaught -- this
+                  # runs on the scheduler's background thread, and letting
+                  # an exception reach its generic handler risks a message
+                  # box being shown from a non-UI thread.
+                  log.debug_exc(
+                     'IssueCoverPanel: error resolving issue in %s' % sstr(ref))
                self.__series_cache[ref] = issue_ref if issue_ref else ref
             def change_ref():
                self.__ref = self.__series_cache[ref]
                self.__update()
+               self.__check_unresolved()
             utils.invoke(self.__coverpanel, change_ref, True)
          def dummy():
             maybe_convert_seriesref_to_issue_ref(ref)
@@ -621,6 +673,14 @@ class IssueCoverPanel(Panel):
                   self.__update()
                utils.invoke(self, update_bmodel, True)
             scheduler.submit(update_cache)
+
+   # ==========================================================================
+   def __start_local_hash_once(self, sender, args):
+      ''' HandleCreated handler -- starts __compute_local_hash the first
+      time this panel actually has a window handle (see __init__). '''
+      if not self.__local_hash_started_b:
+         self.__local_hash_started_b = True
+         self.__compute_local_hash()
 
    # ==========================================================================
    def __compute_local_hash(self):
@@ -755,6 +815,15 @@ class IssueCoverPanel(Panel):
       is unchecked, or if a countdown for this same ref is already
       running (so a spurious re-trigger, e.g. "(more covers)" finishing
       its search, doesn't reset an in-progress countdown). '''
+      if type(ref) == SeriesRef:
+         # a SeriesRef here means resolution to a real issue failed and
+         # __update() fell back to showing the series' own generic cover --
+         # comparing that against the book wouldn't mean anything, so never
+         # arm a countdown for it (see __check_unresolved, which handles
+         # this case instead by telling the caller to move on). Note this
+         # deliberately checks SeriesRef specifically, not "not IssueRef",
+         # since 'ref' can legitimately be a plain alt-cover URL string.
+         return
       if self.__auto_accept_checkbox is None or \
             not self.__auto_accept_checkbox.Checked:
          return
@@ -763,19 +832,25 @@ class IssueCoverPanel(Panel):
          return
       threshold_n = int(self.__auto_accept_threshold_nud.Value)
       accept_b = pct_n is not None and pct_n >= threshold_n
+      reject_is_final_b = True
+      if not accept_b and self.__is_final_candidate is not None:
+         reject_is_final_b = self.__is_final_candidate()
       log.debug('IssueCoverPanel: auto-%s countdown starting for %s '
-         '(match=%s, threshold=%s)' % ('accept' if accept_b else 'skip',
+         '(match=%s, threshold=%s)' % ('accept' if accept_b
+            else ('skip' if reject_is_final_b else 'jump'),
             sstr(ref), sstr(pct_n), threshold_n))
       self.__auto_accept_active_ref = ref
-      self.__start_auto_accept(accept_b)
+      self.__start_auto_accept(accept_b, reject_is_final_b)
 
    # ==========================================================================
-   def __start_auto_accept(self, accept_b):
+   def __start_auto_accept(self, accept_b, reject_is_final_b=True):
       ''' (re)starts the auto-accept/skip countdown from
-      __AUTO_ACCEPT_SECONDS_N, ending in an accept if 'accept_b', a skip
-      otherwise. '''
+      __AUTO_ACCEPT_SECONDS_N, ending in an accept if 'accept_b'; if not,
+      'reject_is_final_b' picks the countdown's wording (see
+      __update_auto_accept_label). '''
       self.__auto_accept_timer.Stop()
       self.__auto_accept_will_accept_b = accept_b
+      self.__auto_accept_reject_is_final_b = reject_is_final_b
       self.__auto_accept_seconds_left_n = self.__AUTO_ACCEPT_SECONDS_N
       self.__update_auto_accept_label()
       self.__auto_accept_timer.Start()
@@ -789,6 +864,20 @@ class IssueCoverPanel(Panel):
       if self.__auto_accept_status_label is not None:
          self.__auto_accept_status_label.Links.Clear()
          self.__auto_accept_status_label.Text = ''
+
+   # ==========================================================================
+   def __check_unresolved(self):
+      ''' Called after set_ref() settles a SeriesRef that had an issue-number
+      hint (i.e. after trying to resolve it to a real issue -- see set_ref).
+      If it's still a SeriesRef (resolution failed) and auto-accept is
+      checked, tells the caller ('on_unresolved') to move on, since
+      __evaluate_auto_accept never arms a countdown for a SeriesRef. '''
+      if type(self.__ref) == SeriesRef and self.__on_unresolved is not None \
+            and self.__auto_accept_checkbox is not None \
+            and self.__auto_accept_checkbox.Checked:
+         log.debug('IssueCoverPanel: %s never resolved to an issue -- '
+            'telling caller to move on' % sstr(self.__ref))
+         self.__on_unresolved()
 
    # ==========================================================================
    def __auto_accept_tick_fired(self, sender, args):
@@ -812,9 +901,12 @@ class IssueCoverPanel(Panel):
       label = self.__auto_accept_status_label
       if label is None:
          return
-      key = "IssueCoverPanelAutoAcceptCountdownAccept" \
-         if self.__auto_accept_will_accept_b \
-         else "IssueCoverPanelAutoAcceptCountdownSkip"
+      if self.__auto_accept_will_accept_b:
+         key = "IssueCoverPanelAutoAcceptCountdownAccept"
+      elif self.__auto_accept_reject_is_final_b:
+         key = "IssueCoverPanelAutoAcceptCountdownSkip"
+      else:
+         key = "IssueCoverPanelAutoAcceptCountdownJump"
       countdown_s = i18n.get(key).format(self.__auto_accept_seconds_left_n)
       cancel_s = i18n.get("IssueCoverPanelAutoAcceptCancel")
       label.Text = countdown_s + "  " + cancel_s

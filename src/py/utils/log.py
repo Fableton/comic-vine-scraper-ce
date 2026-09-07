@@ -227,6 +227,17 @@ def save(show_error_message=False):
 
 
 #==============================================================================
+def _get_app_window():
+   ''' Returns the current __app_window (set via install()). Exists so
+   __Logger's own methods can get at it without private-name-mangling --
+   __app_window starts with a double underscore, so a bare reference to
+   it from inside a class body would silently look for a *different*,
+   mangled name instead (see __debug_raw). '''
+   global __app_window
+   return __app_window
+
+
+#==============================================================================
 class __Logger(object):
    """ A hidden class that implements the public api of this module. """ 
 
@@ -311,23 +322,49 @@ class __Logger(object):
    #==========================================================================
    def __debug_raw(self, message=''):
       """ Records the given message, and writes it out to the 'real' stdout. """
-         
-      # protect access to the logLines with a mutex (for multiple threads)
+
+      try:
+         output_line = utils.sstr(message)
+      except:
+         # shouldn't happen!
+         output_line = "***** LOGGING ERROR *****"
+
+      # protect access to _loglines with a mutex (for multiple threads) --
+      # but ONLY that; see the comment on the write below for why nothing
+      # slow or blocking should ever happen while this is held.
       self._mutex.WaitOne(-1)
       try:
          if self._loglines == None:
             raise Exception("you must install the __Logger before using it")
-         
-         try:
-            output_line = utils.sstr(message)
-         except:
-            # shouldn't happen!
-            output_line = "***** LOGGING ERROR *****"
-             
          self._loglines.append( output_line )
-         sys.__stdout__.write(output_line)
       finally:
          self._mutex.ReleaseMutex()
+
+      # sys.__stdout__ (the script console) is usually a TextBoxStream
+      # owned by the app's main UI thread -- writing to it from any OTHER
+      # thread makes it do a synchronous cross-thread Invoke back onto
+      # that thread. Worse, IronPython's own PythonFile wraps every write
+      # in its OWN internal lock (outside this module's control): if a
+      # background thread is blocked inside that Invoke while HOLDING that
+      # internal lock, and the UI thread then tries to write something of
+      # its own (needing that same internal lock) before servicing the
+      # Invoke, that's a deadlock -- confirmed live (VS Threads window:
+      # main thread stuck in PythonFile.write, "waiting on lock owned by"
+      # a worker thread stuck in Control.WaitForWaitHandle). So a
+      # background thread never writes directly here: it hands the write
+      # to the UI thread ASYNCHRONOUSLY (never blocking on it), so only
+      # the UI thread's own single thread ever actually touches the
+      # stream, and the internal lock is never contended cross-thread.
+      app_window = _get_app_window()
+      if app_window is not None and app_window.InvokeRequired:
+         def do_write():
+            try:
+               sys.__stdout__.write(output_line)
+            except Exception:
+               pass
+         utils.invoke(app_window, do_write, False)
+      else:
+         sys.__stdout__.write(output_line)
 
 
 

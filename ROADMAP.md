@@ -66,6 +66,13 @@
   status/percentage label, not (yet) the auto-accept checkbox. Done, see
   CHANGELOG.md [Unreleased].
 
+- [x] **Extend auto-accept/skip to the series-selection window** (beta
+  branch, not yet on master): shares the issue-selection window's
+  checkbox/threshold; a candidate only counts once it resolves to a real
+  issue, and it tries up to 4 candidates (current table sort order)
+  before giving up and skipping. Done, see CHANGELOG.md
+  `[Unreleased - beta, not yet on master]`.
+
 - [ ] **Review the Comic Vine API documentation**
   (https://comicvine.gamespot.com/api/documentation) for anything new
   this fork could take advantage of -- it was last really gone over long

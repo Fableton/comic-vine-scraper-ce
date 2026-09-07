@@ -66,6 +66,16 @@ class SeriesForm(CVForm):
    log.debug('Init SeriesForm')
    ''' Dialog to pick a comic series. '''
 
+   # auto-accept, when cycling through series candidates, gives up (and
+   # skips the book) once it has compared this many candidates that
+   # actually resolved to a real issue...
+   __AUTO_ACCEPT_MAX_CANDIDATES_N = 4
+   # ...or after scanning this many rows total, whichever comes first -- a
+   # hard safety cap in case most/all rows fail to resolve at all (each of
+   # which is a real network lookup, but doesn't count against the
+   # candidate limit above).
+   __AUTO_ACCEPT_MAX_ROWS_SCANNED_N = 8
+
    def __init__(self, scraper, book, series_refs, search_terms_s,
          has_previous_b=False):
       self.__config = scraper.config
@@ -93,6 +103,19 @@ class SeriesForm(CVForm):
       self.__filter_debounce_timer = Timer()
       self.__filter_debounce_timer.Interval = 1000
       self.__filter_debounce_timer.Tick += self.__filter_debounce_tick
+      # how many candidates auto-accept has actually compared a cover
+      # against (__AUTO_ACCEPT_MAX_CANDIDATES_N caps this) and how many
+      # rows it's stepped through in total, resolving or not
+      # (__AUTO_ACCEPT_MAX_ROWS_SCANNED_N caps this instead) during the
+      # CURRENT auto-accept cycle -- reset whenever the user (rather than
+      # auto-accept itself) changes the selection, see
+      # __change_table_selection_fired.
+      self.__auto_candidates_tried_n = 0
+      self.__auto_rows_scanned_n = 0
+      # True while this class is itself changing the table's selection (to
+      # try the next candidate) -- lets __change_table_selection_fired tell
+      # that apart from the user picking a row themselves.
+      self.__auto_advancing_b = False
       self.__book = book
       if len(series_refs) <= 0:
          raise Exception("do not invoke the SeriesForm with no series!")
@@ -577,7 +600,11 @@ class SeriesForm(CVForm):
       panel = IssueCoverPanel(self.__config, -9991 \
          if self.__config.force_series_art_b else book.issue_num_s,
          editable_hint_b = not self.__config.force_series_art_b,
-         book = book)
+         book = book,
+         on_auto_accept = self.__auto_accept_fired,
+         on_auto_skip = self.__auto_advance_fired,
+         on_unresolved = self.__auto_advance_unresolved_fired,
+         is_final_candidate = self.__is_final_candidate_check)
       panel.Location = Point(523, 30)
       panel.Dock = DockStyle.Fill
       # panel size is determined by the panel itself
@@ -653,6 +680,12 @@ class SeriesForm(CVForm):
    #===========================================================================         
    def __change_table_selection_fired(self, sender, args):
       ''' this method is called whenever the table's selected row changes. '''
+      if not self.__auto_advancing_b:
+         # a selection change the USER made (as opposed to auto-accept
+         # trying the next candidate itself, see __select_next_candidate_or_skip)
+         # starts a fresh auto-accept cycle from here.
+         self.__auto_candidates_tried_n = 0
+         self.__auto_rows_scanned_n = 0
       try:
          selected_rows = self.__table.SelectedRows
          if selected_rows.Count == 1:
@@ -710,8 +743,84 @@ class SeriesForm(CVForm):
          self.__issues_button.Enabled = self.__chosen_index is not None
       # update __chosen_index (eventually used as this dialog's return value)
       # and then also use it to update the displayed cover image.
-               
-   #===========================================================================         
+
+   #===========================================================================
+   def __auto_accept_fired(self):
+      ''' Called (on the UI thread) when the currently-shown candidate's
+      auto-accept countdown decided to accept it -- same as clicking OK. '''
+      log.debug('SeriesForm: auto-accept accepting the current candidate')
+      self.__ok_button.PerformClick()
+
+   #===========================================================================
+   def __is_final_candidate_check(self):
+      ''' Called by the cover panel right before it arms a "reject"
+      countdown, to word it as "Jumping..." (more candidates left to try)
+      or "Skipping..." (rejecting this one would skip the book). Mirrors,
+      without changing anything, the same limits __auto_advance_fired and
+      __select_next_candidate_or_skip enforce when the countdown actually
+      fires. '''
+      if self.__auto_candidates_tried_n + 1 >= self.__AUTO_ACCEPT_MAX_CANDIDATES_N:
+         return True
+      if self.__auto_rows_scanned_n + 1 >= self.__AUTO_ACCEPT_MAX_ROWS_SCANNED_N:
+         return True
+      current_idx = self.__table.CurrentCell.RowIndex \
+         if self.__table.CurrentCell is not None else -1
+      return current_idx + 1 >= self.__table.Rows.Count
+
+   #===========================================================================
+   def __auto_advance_fired(self):
+      ''' Called (on the UI thread) when the currently-shown candidate
+      resolved to a real issue, but its auto-accept countdown decided to
+      skip it (match below threshold). Counts against the candidate
+      limit, then tries the next row (or gives up and skips the book). '''
+      self.__auto_rows_scanned_n += 1
+      self.__auto_candidates_tried_n += 1
+      log.debug('SeriesForm: auto-accept candidate did not match well '
+         'enough (tried %d/%d)' % (self.__auto_candidates_tried_n,
+            self.__AUTO_ACCEPT_MAX_CANDIDATES_N))
+      if self.__auto_candidates_tried_n >= self.__AUTO_ACCEPT_MAX_CANDIDATES_N:
+         self.__skip_button.PerformClick()
+      else:
+         self.__select_next_candidate_or_skip()
+
+   #===========================================================================
+   def __auto_advance_unresolved_fired(self):
+      ''' Called (on the UI thread) when the currently-shown candidate
+      never resolved to a real issue at all -- doesn't count against the
+      candidate limit (no meaningful comparison was ever made), just
+      tries the next row (subject to the row-scan safety cap). '''
+      self.__auto_rows_scanned_n += 1
+      log.debug('SeriesForm: auto-accept candidate did not resolve to an '
+         'issue -- trying next (rows scanned %d/%d)'
+         % (self.__auto_rows_scanned_n, self.__AUTO_ACCEPT_MAX_ROWS_SCANNED_N))
+      self.__select_next_candidate_or_skip()
+
+   #===========================================================================
+   def __select_next_candidate_or_skip(self):
+      ''' Advances the table's selection to the next row, or clicks Skip
+      if there isn't one (or a safety cap was hit) -- used by auto-accept
+      to try the next candidate. '''
+      if self.__auto_rows_scanned_n >= self.__AUTO_ACCEPT_MAX_ROWS_SCANNED_N:
+         log.debug('SeriesForm: auto-accept row-scan safety cap reached -- skipping')
+         self.__skip_button.PerformClick()
+         return
+      table = self.__table
+      current_idx = table.CurrentCell.RowIndex if table.CurrentCell is not None else -1
+      next_idx = current_idx + 1
+      if next_idx >= table.Rows.Count:
+         log.debug('SeriesForm: auto-accept ran out of candidate rows -- skipping')
+         self.__skip_button.PerformClick()
+         return
+      self.__auto_advancing_b = True
+      try:
+         table.CurrentCell = table.Rows[next_idx].Cells[0]
+      except Exception as e:
+         log.debug('SeriesForm: auto-accept advance-selection error %s' % e)
+         self.__skip_button.PerformClick()
+      finally:
+         self.__auto_advancing_b = False
+
+   #===========================================================================
    def __key_was_pressed(self, sender, args):
       ''' Called whenever the user presses any key on this form. '''
       
