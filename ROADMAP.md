@@ -44,6 +44,28 @@
   a middle ground between fully manual and fully automatic scraping.
   Done, see CHANGELOG.md [Unreleased].
 
+- [x] **Dev-only grid debug overlay**: Ctrl+Shift+G in any window toggles
+  an overlay tinting every TableLayoutPanel's cells by nesting depth, so
+  nested grids are visually distinct (added to `CVForm`, so it applies
+  everywhere automatically) -- meant purely to make layout discussions
+  ("row 2, column 1") precise without guesswork; never shown to end
+  users. Done, see CHANGELOG.md [Unreleased].
+
+- [x] **Rebuild the issue/series cover panel's layout as an actual grid**:
+  `IssueCoverPanel` (shared by the issue- and series-selection windows)
+  used to position every control (cover, buttons, labels) by
+  hand-computed pixel math on every resize. Replaced with a single
+  `TableLayoutPanel` stacking the rows, with a small inner grid for any
+  row that itself needs more than one column. The cover image now relies
+  on `PictureBoxSizeMode.Zoom` to keep its aspect ratio instead of custom
+  math. Done, see CHANGELOG.md [Unreleased].
+
+- [x] **Show the cover-match percentage in the series-selection window
+  too**: reuses the issue-selection window's existing match-percentage
+  logic (local-hash comparison, background computation) -- just the
+  status/percentage label, not (yet) the auto-accept checkbox. Done, see
+  CHANGELOG.md [Unreleased].
+
 - [ ] **Review the Comic Vine API documentation**
   (https://comicvine.gamespot.com/api/documentation) for anything new
   this fork could take advantage of -- it was last really gone over long

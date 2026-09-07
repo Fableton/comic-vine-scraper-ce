@@ -7,6 +7,19 @@ v1.0.102.
 
 ## [Unreleased]
 
+- Added a dev-only debug aid (not user-facing): pressing Ctrl+Shift+G in
+  any window overlays every grid-based layout's cells, tinted by nesting
+  depth -- makes it quick to point at exactly where a layout change
+  should go.
+- Rebuilt the issue/series cover panel's internal layout (cover art,
+  prev/next + caption row, match %, auto-accept) as a nested grid
+  (`TableLayoutPanel`) instead of hand-computed pixel positions -- same
+  look, but far easier to rearrange going forward. The cover image
+  itself now preserves its aspect ratio via `PictureBoxSizeMode.Zoom`
+  rather than custom math.
+- The series-selection window now also shows the "Cover Match: N%" /
+  "Comparing covers..." status below the cover preview, the same as the
+  issue-selection window already did.
 - Double-clicking a row in the issue-selection window now picks that
   issue immediately, the same as selecting it and clicking OK.
 - Added a "Type" column to the series-selection window that tags a result
