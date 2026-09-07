@@ -75,6 +75,12 @@ class IssueCoverPanel(Panel):
       self.__book = book
       self.__on_auto_accept = on_auto_accept
       self.__on_auto_skip = on_auto_skip
+      # the auto-accept checkbox/threshold/countdown controls only make
+      # sense (and are only built) if the caller actually wants to act on
+      # them -- a caller that only wants the match label (status + %) but
+      # not the auto-accept UI just omits both callbacks.
+      self.__auto_accept_enabled_b = \
+         on_auto_accept is not None or on_auto_skip is not None
       self.__coverpanel = None
       self.__label = None
       self.__match_label = None
@@ -142,6 +148,7 @@ class IssueCoverPanel(Panel):
       self.__prevbutton = self.__build_prevbutton()
       if self.__book is not None:
          self.__match_label = self.__build_match_label()
+      if self.__auto_accept_enabled_b:
          self.__auto_accept_checkbox = self.__build_auto_accept_checkbox()
          self.__auto_accept_threshold_nud = self.__build_auto_accept_threshold_nud()
          self.__auto_accept_status_label = self.__build_auto_accept_status_label()
@@ -188,6 +195,7 @@ class IssueCoverPanel(Panel):
          grid.Controls.Add(self.__match_label, 0, row_n)
          row_n += 1
 
+      if self.__auto_accept_enabled_b:
          auto_style = RowStyle(SizeType.Absolute,
             guistyle.control_row_height(self.Font))
          grid.RowStyles.Add(auto_style)

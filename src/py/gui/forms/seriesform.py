@@ -576,7 +576,8 @@ class SeriesForm(CVForm):
       '''
       panel = IssueCoverPanel(self.__config, -9991 \
          if self.__config.force_series_art_b else book.issue_num_s,
-         editable_hint_b = not self.__config.force_series_art_b)
+         editable_hint_b = not self.__config.force_series_art_b,
+         book = book)
       panel.Location = Point(523, 30)
       panel.Dock = DockStyle.Fill
       # panel size is determined by the panel itself
