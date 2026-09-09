@@ -73,7 +73,10 @@
 "Love Potion #9 5 (What?).cbz", "Love Potion #9" "5" 
 "Love Potion #9, #5 (What?).cbz", "Love Potion #9" "5" 
 "Love Potion #9 v300 4 (What?).cbz", "Love Potion #9" "4" 
-"Love Potion #9.cbz", "Love Potion" "9"  # unavoidable 
+"Love Potion #9.cbz", "Love Potion" "9"  # unavoidable
+# a '#' number followed later by an unrelated trailing number that's part of
+# a story-arc subtitle (no dash to delimit it) should still prefer the '#' one
+"Batman #437 Ano tres 2.cbr" "Batman Ano tres 2" "437" ""
 "5 Ronin 03 (2011) (Minutemen-DeliriousScanner)" "5 Ronin" "3" "2011"
 "Scratch9 03 (of 04) (2010) (C2C) (Minutemen-DrSouse)" "Scratch9" "3" "2010"
 "#3 Scratch9 (2010)" "Scratch9" "3" "2010"

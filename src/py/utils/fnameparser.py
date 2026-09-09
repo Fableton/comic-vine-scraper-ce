@@ -153,11 +153,22 @@ def __extract(name_s):
       s = re.sub(pattern, "", s, 1)
       matches = __extract_numbers(s)
       
-   # 12. if we parsed out some potential issue numbers, designate the LAST 
-   #    (rightmost) one as the actual issue number, and remove it from the name
-   if len(matches) > 0: 
-      issue_num_s = matches[-1].group(2)
-      series_s = s[:matches[-1].start(0)] +s[matches[-1].end(0):]
+   # 12. if we parsed out some potential issue numbers, designate the LAST
+   #    (rightmost) one as the actual issue number, and remove it from the name.
+   #    EXCEPTION: if an earlier number is prefixed with '#' and everything
+   #    between it and the last number is non-numeric prose (e.g. a story arc
+   #    subtitle like "Year Three 2"), prefer the '#'-prefixed number instead--
+   #    it's almost certainly the real issue number, and the trailing number
+   #    is just part of that prose.
+   if len(matches) > 0:
+      chosen = matches[-1]
+      hash_matches = [m for m in matches if m.group(1) == "#"]
+      if hash_matches and hash_matches[-1] is not chosen:
+         between_s = s[hash_matches[-1].end(0):chosen.start(0)]
+         if re.search(r"(?u)[^\W\d_]", between_s):
+            chosen = hash_matches[-1]
+      issue_num_s = chosen.group(2)
+      series_s = s[:chosen.start(0)] +s[chosen.end(0):]
       # 10a. strip off leading/trailing zeroes
       matches = re.match("^(0+)([0-9].*)$", issue_num_s)
       issue_num_s = matches.group(2) if matches else issue_num_s
