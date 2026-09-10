@@ -5,13 +5,20 @@ starting from where it diverges from upstream
 [cbanack/comic-vine-scraper](https://github.com/cbanack/comic-vine-scraper)
 v1.0.102.
 
-## [Unreleased - beta, not yet on master]
+## [1.1.0-ce-beta.1] - 2026-09-09
 
-This section covers a beta branch only (auto-accept for the
-series-selection window) -- still being stress-tested before merging
-into master, since earlier rounds of it caused real hangs. Not part of
-any release yet.
+Beta build off the `beta/series-auto-accept` branch, published for wider
+testing before merging into master -- earlier rounds of the
+series-selection auto-accept work below caused real hangs, so this is
+not yet considered stable.
 
+- Fixed the filename parser preferring a trailing subtitle number over
+  the real issue number when a `#`-prefixed number appears earlier with
+  no dash to separate it from an undashed story-arc subtitle, e.g.
+  `"Batman #437 Year Three 2.cbr"` was parsed as issue "2" instead of
+  "437". Now, when everything between an earlier `#`-prefixed number and
+  the last number in the filename is non-numeric prose, the `#`-prefixed
+  number wins.
 - Extended "Auto-accept" (see below) to the series-selection window: a
   candidate series only ever gets compared once it actually resolves to
   a real issue for the book (never against a series' own generic cover
@@ -49,9 +56,6 @@ any release yet.
   handle-less invoke is silently dropped by design (meant for an
   already-closed dialog, not a not-yet-opened one). Now waits for the
   panel's HandleCreated event before starting that computation.
-
-## [Unreleased]
-
 - Added a dev-only debug aid (not user-facing): pressing Ctrl+Shift+G in
   any window overlays every grid-based layout's cells, tinted by nesting
   depth -- makes it quick to point at exactly where a layout change
