@@ -146,6 +146,11 @@ class SeriesForm(CVForm):
       self.ClientSize = Size(1200, 700)
       self.MinimumSize = Size(700, 400)
       self.Text = i18n.get("SeriesFormTitle")
+      # so Enter confirms the already-highlighted row even if the user never
+      # clicked anything yet -- ButtonDataGridView (see below) only catches
+      # Enter once the table itself actually has keyboard focus, which isn't
+      # the case for the default suggestion until the user interacts with it.
+      self.AcceptButton = self.__ok_button
       self.FormClosed += self.__form_closed_fired
       self.KeyPreview = True
       self.KeyDown += self.__key_was_pressed
