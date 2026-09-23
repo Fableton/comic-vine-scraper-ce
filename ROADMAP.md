@@ -58,20 +58,19 @@
   `TableLayoutPanel` stacking the rows, with a small inner grid for any
   row that itself needs more than one column. The cover image now relies
   on `PictureBoxSizeMode.Zoom` to keep its aspect ratio instead of custom
-  math. Done, see CHANGELOG.md [Unreleased].
+  math. Done, see CHANGELOG.md `[1.1.1-ce]`.
 
 - [x] **Show the cover-match percentage in the series-selection window
   too**: reuses the issue-selection window's existing match-percentage
   logic (local-hash comparison, background computation) -- just the
   status/percentage label, not (yet) the auto-accept checkbox. Done, see
-  CHANGELOG.md `[1.1.0-ce-beta.1]`.
+  CHANGELOG.md `[1.1.1-ce]`.
 
-- [x] **Extend auto-accept/skip to the series-selection window** (beta
-  branch, not yet on master): shares the issue-selection window's
-  checkbox/threshold; a candidate only counts once it resolves to a real
-  issue, and it tries up to 4 candidates (current table sort order)
-  before giving up and skipping. Done, see CHANGELOG.md
-  `[1.1.0-ce-beta.1]`.
+- [x] **Extend auto-accept/skip to the series-selection window**: shares
+  the issue-selection window's checkbox/threshold; a candidate only
+  counts once it resolves to a real issue, and it tries up to 4
+  candidates (current table sort order) before giving up and skipping.
+  Done, see CHANGELOG.md `[1.1.1-ce]`.
 
 - [ ] **Review the Comic Vine API documentation**
   (https://comicvine.gamespot.com/api/documentation) for anything new

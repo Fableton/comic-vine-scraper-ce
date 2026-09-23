@@ -5,13 +5,19 @@ starting from where it diverges from upstream
 [cbanack/comic-vine-scraper](https://github.com/cbanack/comic-vine-scraper)
 v1.0.102.
 
-## [1.1.0-ce-beta.1] - 2026-09-09
+## [1.1.1-ce] - 2026-09-23
 
-Beta build off the `beta/series-auto-accept` branch, published for wider
-testing before merging into master -- earlier rounds of the
-series-selection auto-accept work below caused real hangs, so this is
-not yet considered stable.
+Promotes the `beta/series-auto-accept` branch (previously published only
+as the 1.1.0-ce-beta.1 pre-release) to master -- the series-selection
+auto-accept work below had caused real hangs in earlier rounds, but has
+since been stress-tested and confirmed stable.
 
+- Fixed Enter doing nothing on the series/issue-selection dialogs when
+  the auto-suggested top choice was already correct -- it only worked
+  after clicking a different row with the mouse first, since the table's
+  own Enter handling requires the table to actually have keyboard focus,
+  which it doesn't by default. Enter now always confirms whatever's
+  currently highlighted.
 - Fixed the filename parser preferring a trailing subtitle number over
   the real issue number when a `#`-prefixed number appears earlier with
   no dash to separate it from an undashed story-arc subtitle, e.g.
