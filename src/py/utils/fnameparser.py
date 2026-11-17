@@ -160,7 +160,17 @@ def __extract(name_s):
    #    subtitle like "Year Three 2"), prefer the '#'-prefixed number instead--
    #    it's almost certainly the real issue number, and the trailing number
    #    is just part of that prose.
-   if len(matches) > 0:
+   #    ALSO: a bare bracketed number with a leading zero, like "Catwoman (04)",
+   #    is almost certainly the issue number, so it takes priority over loose
+   #    numbers that are really part of the title ("Catwoman The New 52! (04)"),
+   #    unless the name has an explicit '#' number.
+   bracket_nums = re.findall(
+      r"[(\[{]\s*(0\d{1,2}(?:\.\d+)?)\s*[)\]}]", name_s)
+   if bracket_nums and not any(m.group(1) == "#" for m in matches):
+      x = bracket_nums[-1]
+      issue_num_s = utils.sstr(float(x) if '.' in x else int(x))
+      series_s = s
+   elif len(matches) > 0:
       chosen = matches[-1]
       hash_matches = [m for m in matches if m.group(1) == "#"]
       if hash_matches and hash_matches[-1] is not chosen:
@@ -178,6 +188,11 @@ def __extract(name_s):
    else:
       issue_num_s = ""
       series_s = s
+      # 12a. fallback: no number outside brackets, so accept any short bare
+      #    bracketed number like "Catwoman (1)".  years are ignored (max 3 digits)
+      bracketed = re.findall(r"[(\[{]\s*(\d{1,3}(?:\.\d+)?)\s*[)\]}]", name_s)
+      if bracketed:
+         issue_num_s = re.sub(r"^0+(?=\d)", "", bracketed[-1])
 
    # 13. contract repeating whitespace, and strip bad chars off the ends      
    series_s = re.sub(r"\s{2,}", " ", series_s).strip(" ,-_") 
